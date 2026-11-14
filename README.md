@@ -62,15 +62,31 @@ learn-swedish
 The package installs runtime dependencies and adds **Swedish Keys** to the app
 launcher. No Rust compiler is needed. A `.tar.gz` containing the standalone
 binary is also available; it requires the same native libraries as the `.deb`.
-Verify downloads with `sha256sum -c SHA256SUMS` after downloading both archives
-and their checksum file.
+Verify downloads with `sha256sum --ignore-missing -c SHA256SUMS` after downloading
+your chosen files and their checksum file.
 
-**Speech recordings are not bundled.** The app's MIT source license does not
+**Speech recordings are a separate optional download**, not bundled in the
+app packages. Download `learn-swedish-speech-sv-SE-SofieNeural-0.1.0.tar.gz`
+from the release for the 120 fixed Swedish phrases and their word timings.
+Close the app, then install the recordings from your download directory:
+
+```sh
+data="${XDG_DATA_HOME:-$HOME/.local/share}/learn-swedish"
+mkdir -p "$data"
+tar -xzf learn-swedish-speech-sv-SE-SofieNeural-0.1.0.tar.gz -C "$data"
+```
+
+Relaunch the app to use Sofie's synthetic voice offline. No Azure account, key,
+SDK or network connection is needed for playback. Installing the archive selects
+the downloaded bank; previously prepared banks are retained.
+
+The app's MIT source license does not
 grant rights to Microsoft-generated recordings or Piper models. Microsoft's
 [Azure terms](https://www.microsoft.com/licensing/terms/productoffering/MicrosoftAzure/MCA)
 expressly grant prebuilt-neural TTS output use rights to paid-tier customers;
-do not assume F0 recordings have the same redistribution rights. This release
-therefore excludes Azure recordings, API keys, Python SDKs and voice models.
+the redistribution rights for these F0-generated recordings are not confirmed.
+Their availability here is not a grant of rights or confirmation of Microsoft's
+permission. Downloads contain no API keys, Python SDKs or voice models.
 Confirm the terms applicable to your subscription before redistributing audio.
 
 For private use on another computer, copy your existing
