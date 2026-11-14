@@ -1,0 +1,15 @@
+/target/
+/dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.wav
+*.onnx*
+/speech/
+/voices/
+/azure-env/
+/piper-env/

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Swedish Keys
+Comment=Practice Swedish keyboard characters and pronunciation
+Exec=learn-swedish
+Icon=input-keyboard
+Terminal=false
+Categories=Education;Languages;
+StartupNotify=true

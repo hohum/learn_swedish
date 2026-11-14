@@ -1,0 +1,22 @@
+[package]
+name = "learn-swedish"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "Untimed Swedish keyboard and pronunciation practice for GNOME"
+license = "MIT"
+
+[features]
+default = ["gui"]
+gui = ["dep:adw", "dep:gstreamer", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+adw = { package = "libadwaita", version = "0.9", optional = true }
+gstreamer = { version = "0.25", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[[bin]]
+name = "learn-swedish"
+path = "src/main.rs"
+required-features = ["gui"]
