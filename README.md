@@ -21,7 +21,11 @@ or larger system text/scaling settings.
   and whitespace characters used in Linux administration and programming.
 - Every session shuffles the selected set, showing each character once.
   Restarting or switching sets creates a fresh shuffle.
-- Large symbol, English/Swedish name hints, and Swedish-layout key combinations.
+- **Everything** is the default practice set, mixing letters, numbers and symbols.
+- Large symbol, Swedish name hints, and Swedish-layout key combinations.
+  **Show English hints** is off by default; enable it to reveal the English
+  name below the symbol and English translations in **Listen & follow**.
+  Toggling it also updates the current transcript without interrupting speech.
 - Offline neural Swedish speech from prepared **Azure Sofie** recordings,
   or the alternative Piper **NST** and **Alma** voices.
   A complete Azure library takes precedence over Piper; Sofie is then used
@@ -45,6 +49,80 @@ Levels 2–10 (progressively faster practice) and microphone recognition are
 **not implemented yet**. No microphone is opened. Practice runs entirely offline;
 only Azure preparation sends the fixed Swedish curriculum text to Microsoft.
 
+## Story adventure
+
+At startup, choose **Välj ditt eget äventyr / Choose your own adventure** to open
+**En lagom äventyrlig lördag**
+("A moderately adventurous Saturday"). You are the husband; your Swedish-speaking
+wife helps you find the words. Every outing starts at home and returns home:
+
+- **The woods:** rain gear, muddy paths, a dog walker, unfamiliar berries,
+  a toilet stop and a rainy walk home.
+- **Willys:** a shopping list, kilos versus individual items, finding the dairy
+  aisle, choosing milk, sold-out bread, a lost phone, bags and receipts.
+- **IKEA by car:** staying calm in traffic, a police check, parking signs,
+  furniture measurements, warehouse directions, toilets and loading safely.
+- **Gothenburg by train:** tickets, delays, a cancelled train and replacement
+  bus, ordering fika, sharing a café table, a toilet code and the journey home.
+
+Each illustrated page contains Swedish narration, dialogue and a question with
+four responses. Click a response, enter **1–4**, or type the complete Swedish
+response and press **Enter**. Case and final `.?!` do not matter; Swedish spelling
+and accents still do. Wrong choices receive a dry, good-natured reply from your
+wife, then **Try again** returns to the same question. **Continue** follows the
+chosen route after a successful answer. Destination choices are all valid.
+Nothing records microphone audio, and typed answers are never sent to Azure.
+Progress is session-only; **Restart book** returns to the beginning.
+
+The silent start menu also offers **Tangentbordsövning / Keyboard practice**.
+Choose **Meny / Menu** in either activity to return to the start menu; opening an
+activity again starts a fresh session.
+
+**Show English hints** is off by default and controls both the story transcript
+and response translations. **Read aloud** reads the page, its question and all
+four options, then reads your selected response and the reply. Responses are
+locked during speech; turn off Read aloud to stop playback and read at your own
+pace. Replay repeats the current page or feedback. Highlighting uses measured
+word timings and automatically follows the current passage in its scroll area.
+Male roles use **Azure Mattias**; female roles, including your wife, use
+**Azure Sofie**. The narrator is male. Several characters share each voice,
+but their Swedish role labels identify who is speaking.
+
+The original location illustrations are drawn as scalable vector scenes by the
+app: home, forest, supermarket, road, furniture store, railway and city café.
+They need no downloads, network access or external image models.
+
+### Prepare the adventure voices
+
+The keyboard voice bank does **not** contain the story dialogue. First complete
+the Azure Python environment setup below, close the app, and run in PowerShell
+from the project directory:
+
+```powershell
+wsl -d Ubuntu -- cargo run --locked -- --prepare-adventure-speech
+```
+
+In an Ubuntu terminal, use `cargo run --locked -- --prepare-adventure-speech`;
+an installed binary from an updated build accepts
+`learn-swedish --prepare-adventure-speech`.
+Enter the key only at the hidden terminal prompt. The command displays how many
+fixed recordings it will reuse or generate. A full story requires many more
+recordings than keyboard practice; allow **tens of minutes** at F0's request
+limit and check your quota/pricing before starting. Only the authored Swedish
+story is sent, with the selected prebuilt voice for each line. No credentials
+are stored. Generation remains below 20 requests per minute.
+
+Story audio is kept separately under
+`~/.local/share/learn-swedish/speech/azure-adventure`, with one directory per
+voice, and never replaces your keyboard recordings. Updates reuse validated
+story recordings and publish the new bank only after every requested recording
+and its timings pass validation. If preparation fails, completed recordings are
+retained and reused on the next attempt; incomplete cache entries are reported
+and regenerated. The v0.2.0 optional speech download contains both the keyboard
+and adventure banks. Until preparation or installation is complete,
+the book still works as a text adventure; missing audio is reported visibly.
+Generated story audio is also subject to the Azure terms described below.
+
 ## Download and install on Ubuntu 26.04
 
 Download the latest `.deb` from [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
@@ -55,7 +133,7 @@ under WSLg.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.1.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.2.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 
@@ -66,19 +144,19 @@ Verify downloads with `sha256sum --ignore-missing -c SHA256SUMS` after downloadi
 your chosen files and their checksum file.
 
 **Speech recordings are a separate optional download**, not bundled in the
-app packages. Download `learn-swedish-speech-sv-SE-SofieNeural-0.1.0.tar.gz`
-from the release for the 120 fixed Swedish phrases and their word timings.
+app packages. Download `learn-swedish-speech-0.2.0.tar.gz` from the release for
+the keyboard and adventure recordings and their word timings.
 Close the app, then install the recordings from your download directory:
 
 ```sh
 data="${XDG_DATA_HOME:-$HOME/.local/share}/learn-swedish"
 mkdir -p "$data"
-tar -xzf learn-swedish-speech-sv-SE-SofieNeural-0.1.0.tar.gz -C "$data"
+tar -xzf learn-swedish-speech-0.2.0.tar.gz -C "$data"
 ```
 
-Relaunch the app to use Sofie's synthetic voice offline. No Azure account, key,
-SDK or network connection is needed for playback. Installing the archive selects
-the downloaded bank; previously prepared banks are retained.
+Relaunch the app to use the Sofie and Mattias synthetic voices offline. No Azure
+account, key, SDK or network connection is needed for playback. Installing the
+archive selects the downloaded banks; previously prepared banks are retained.
 
 The app's MIT source license does not
 grant rights to Microsoft-generated recordings or Piper models. Microsoft's
@@ -141,7 +219,17 @@ Letters accept either case; punctuation must match exactly. Correct input
 stays visible until the next card. With **Automatic next** on, the app waits for
 the full answer/feedback/announcement sequence before advancing. Wrong input
 also stays visible and is selected so that typing again replaces it; Backspace
-or Delete can clear it without counting another attempt. Moving to the next
+or Delete can clear it without counting another attempt. Input is locked while
+the app speaks a prompt, answer or feedback, so an early correction cannot cut
+off the explanation. Early keystrokes are discarded, not saved for the next
+card. If you type while it is speaking, speech pauses for one random Swedish
+reminder: **Vänta lite**, **Ett ögonblick**, **Vänta en sekund**,
+**Vänta lite grann** or **Bara en sekund**. Repeated keys do not queue more
+reminders during the reminder itself. Afterwards, the interrupted phrase
+restarts from the beginning in the same voice, followed by any remaining
+feedback and next-card announcement. Input stays locked throughout.
+Replay, Next and settings can still cancel speech; playback errors
+also release the input lock. Moving to the next
 card clears the input box. **Next / Skip** advances without a correct
 answer and counts that card as skipped. **Finish** shows the session summary.
 **Practice again** starts over.
@@ -204,7 +292,10 @@ visible key input if a hidden terminal prompt is unavailable.
 
 The command explains the fixed text that will be sent to Microsoft and prints
 progress for each recording. It paces requests below F0's 20-per-minute limit;
-allow several minutes for all 120 phrases. Do not use the same resource for
+allow several minutes for a fresh library of 125 phrases. Existing validated
+Azure recordings are reused, so updating the previous 120-phrase library sends
+only the five new wait phrases. The active bank is replaced only after the
+complete updated library passes validation. Do not use the same resource for
 other synthesis simultaneously. Check [Azure pricing](https://azure.microsoft.com/pricing/details/speech/)
 and [quotas](https://learn.microsoft.com/azure/ai-services/speech-service/speech-services-quotas-and-limits)
 for your tier. Requests can count against your allowance even if preparation

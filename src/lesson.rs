@@ -18,6 +18,40 @@ pub struct Card {
 pub struct Phrase {
     pub english: String,
     pub swedish: String,
+    pub voice: Option<Voice>,
+    pub speaker: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Voice {
+    Sofie,
+    Mattias,
+}
+
+impl Voice {
+    pub fn azure_name(self) -> &'static str {
+        match self {
+            Self::Sofie => "sv-SE-SofieNeural",
+            Self::Mattias => "sv-SE-MattiasNeural",
+        }
+    }
+}
+
+impl Phrase {
+    pub fn audio_stem(&self) -> String {
+        if self.voice.is_none() {
+            return self.swedish.clone();
+        }
+        // Stable FNV-1a names keep long story sentences within filesystem limits.
+        let hash = self
+            .swedish
+            .as_bytes()
+            .iter()
+            .fold(0xcbf29ce484222325_u64, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+            });
+        format!("{hash:016x}")
+    }
 }
 
 impl From<Card> for Phrase {
@@ -25,6 +59,8 @@ impl From<Card> for Phrase {
         Self {
             english: card.english,
             swedish: card.swedish,
+            voice: None,
+            speaker: None,
         }
     }
 }
@@ -83,6 +119,28 @@ const NEXT_PHRASES: &[(&str, &str)] = &[
     ),
 ];
 
+const WAIT_PHRASES: &[(&str, &str)] = &[
+    ("Wait a little.", "Vänta lite."),
+    ("Just a moment.", "Ett ögonblick."),
+    ("Hang on a second.", "Vänta en sekund."),
+    ("Hold on a little.", "Vänta lite grann."),
+    ("Just a second.", "Bara en sekund."),
+];
+
+pub fn wait_phrase_count() -> usize {
+    WAIT_PHRASES.len()
+}
+
+pub fn wait_phrase(choice: usize) -> Phrase {
+    let (english, swedish) = WAIT_PHRASES[choice % WAIT_PHRASES.len()];
+    Phrase {
+        english: english.into(),
+        swedish: swedish.into(),
+        voice: None,
+        speaker: None,
+    }
+}
+
 pub fn next_phrase_count() -> usize {
     NEXT_PHRASES.len()
 }
@@ -92,6 +150,8 @@ pub fn next_phrase(choice: usize) -> Phrase {
     Phrase {
         english: english.into(),
         swedish: swedish.into(),
+        voice: None,
+        speaker: None,
     }
 }
 
@@ -113,6 +173,8 @@ pub fn feedback_phrase(correct: bool, choice: usize) -> Phrase {
     Phrase {
         english: english.into(),
         swedish: swedish.into(),
+        voice: None,
+        speaker: None,
     }
 }
 
@@ -123,9 +185,12 @@ pub fn speech_phrases() -> Vec<Phrase> {
             .iter()
             .chain(INCORRECT_PHRASES)
             .chain(NEXT_PHRASES)
+            .chain(WAIT_PHRASES)
             .map(|(english, swedish)| Phrase {
                 english: (*english).into(),
                 swedish: (*swedish).into(),
+                voice: None,
+                speaker: None,
             }),
     );
     phrases

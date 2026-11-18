@@ -170,6 +170,45 @@ def prepare(output: Path, texts: list[str], key: str, region: str) -> None:
         (output / f"{text}.json").write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
         print(f"Prepared {index}/{len(texts)}: {text}", flush=True)
 
+def validate_jobs(payload: object) -> list[dict[str, str]]:
+    if not isinstance(payload, dict) or set(payload) != {"jobs"}:
+        raise ValueError("Expected fixed story recording jobs")
+    jobs = payload["jobs"]
+    if not isinstance(jobs, list) or not jobs:
+        raise ValueError("Expected a nonempty list of story recording jobs")
+    seen = set()
+    for job in jobs:
+        if (
+            not isinstance(job, dict)
+            or set(job) != {"text", "voice", "stem"}
+            or not isinstance(job["text"], str) or not job["text"].strip()
+            or job["voice"] not in ("sv-SE-SofieNeural", "sv-SE-MattiasNeural")
+            or not isinstance(job["stem"], str)
+            or not re.fullmatch(r"[0-9a-f]{16}", job["stem"])
+        ):
+            raise ValueError("Invalid story voice, text or recording filename")
+        identity = (job["voice"], job["stem"])
+        if identity in seen:
+            raise ValueError("Duplicate story recording filename")
+        seen.add(identity)
+    return jobs
+
+
+def prepare_jobs(output: Path, jobs: list[dict[str, str]], key: str, region: str) -> None:
+    config = speech_config(key, region)
+    for index, job in enumerate(jobs, 1):
+        if index > 1:
+            time.sleep(3.1)
+        config.speech_synthesis_voice_name = job["voice"]
+        audio, metadata = synthesize(config, job["text"])
+        folder = output / job["voice"]
+        folder.mkdir(exist_ok=True)
+        (folder / f'{job["stem"]}.wav').write_bytes(audio)
+        (folder / f'{job["stem"]}.json').write_text(
+            json.dumps(metadata, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f'Prepared {index}/{len(jobs)} ({job["voice"]}): {job["text"]}', flush=True)
+
 
 def credentials() -> tuple[str, str]:
     if not sys.stdin.isatty():
@@ -191,17 +230,24 @@ def credentials() -> tuple[str, str]:
 
 def main() -> None:
     output = Path(sys.argv[1])
-    texts = json.loads(sys.argv[2])
+    argument = sys.argv[2]
+    payload = json.loads(Path(argument[1:]).read_text(encoding="utf-8") if argument.startswith("@") else argument)
+    jobs = validate_jobs(payload) if isinstance(payload, dict) else None
+    texts = [job["text"] for job in jobs] if jobs else payload
     if not isinstance(texts, list) or not texts or not all(isinstance(text, str) and text.strip() for text in texts):
         raise ValueError("Expected a nonempty JSON array of Swedish phrases")
     print(
         f"Azure will receive {len(texts)} fixed Swedish phrases "
-        f"({sum(map(len, texts))} characters) to record with Sofie.\n"
+        f"({sum(map(len, texts))} characters) to record with "
+        f"{'Sofie and Mattias' if jobs else 'Sofie'}.\n"
         "No typed answers or microphone audio are sent. Your key is not saved."
     )
     key, region = credentials()
     try:
-        prepare(output, texts, key, region)
+        if jobs:
+            prepare_jobs(output, jobs, key, region)
+        else:
+            prepare(output, texts, key, region)
     except RuntimeError as error:
         raise RuntimeError(str(error).replace(key, "[redacted]")) from None
 

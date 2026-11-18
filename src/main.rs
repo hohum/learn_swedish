@@ -1,13 +1,14 @@
 mod speech;
+mod story_ui;
 
 use adw::gtk::{self, glib};
 use adw::prelude::*;
 use learn_swedish::lesson::{
     Answer, Category, Lesson, Phrase, feedback_count, feedback_phrase, next_phrase,
-    next_phrase_count, spoken_input,
+    next_phrase_count, spoken_input, wait_phrase, wait_phrase_count,
 };
 use speech::Speech;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 struct Practice {
@@ -25,9 +26,12 @@ struct Practice {
     automatic: gtk::CheckButton,
     speak_typed: gtk::CheckButton,
     auto_next: gtk::CheckButton,
+    show_english: gtk::CheckButton,
     next_timer: RefCell<Option<glib::SourceId>>,
     speech_status: gtk::Label,
     follow_along: gtk::Label,
+    listening_heading: gtk::Label,
+    speaking: Cell<bool>,
     speech: Rc<Speech>,
 }
 
@@ -42,7 +46,7 @@ impl Practice {
         }
     }
 
-    fn restart(&self) {
+    fn restart(self: &Rc<Self>) {
         self.lesson
             .replace(Self::shuffled_lesson(self.selected_category()));
         self.show_card();
@@ -58,10 +62,10 @@ impl Practice {
         })
     }
 
-    fn show_card(&self) {
+    fn show_card(self: &Rc<Self>) {
         self.cancel_next_timer();
         self.speech.stop();
-        self.follow_along.set_label("");
+        self.speech.show_transcript(&[], &self.follow_along);
         self.entry.set_text("");
         let lesson = self.lesson.borrow();
         self.entry.set_sensitive(lesson.current().is_some());
@@ -115,16 +119,47 @@ impl Practice {
         }
     }
 
-    fn speak_current(&self) {
+    fn speak_current(self: &Rc<Self>) {
         self.cancel_next_timer();
-        if let Some(card) = self.lesson.borrow().current() {
-            self.speech.speak(
-                vec![Phrase::from(card.clone())],
-                &self.speech_status,
-                &self.follow_along,
-            );
+        let phrase = self.lesson.borrow().current().cloned().map(Phrase::from);
+        if let Some(phrase) = phrase {
+            self.play(vec![phrase], false);
         } else {
             self.speech_status.set_label("Practice complete");
+        }
+    }
+
+    fn play(self: &Rc<Self>, phrases: Vec<Phrase>, advance: bool) {
+        self.speech.stop();
+        self.speaking.set(true);
+        self.entry.set_editable(false);
+        let weak = Rc::downgrade(self);
+        self.speech.speak_then(
+            phrases,
+            &self.speech_status,
+            &self.follow_along,
+            move |completed| {
+                if let Some(practice) = weak.upgrade() {
+                    practice.speaking.set(false);
+                    practice
+                        .entry
+                        .set_editable(!practice.lesson.borrow().answered());
+                    if completed && advance {
+                        practice.advance_after_answer();
+                    }
+                }
+            },
+        );
+    }
+
+    fn request_wait(&self) {
+        if self.speaking.get() {
+            let choice = usize::try_from(glib::random_int_range(
+                0,
+                i32::try_from(wait_phrase_count()).expect("Wait phrase count fits i32"),
+            ))
+            .expect("Wait phrase choice is nonnegative");
+            self.speech.interrupt_with(wait_phrase(choice));
         }
     }
 
@@ -134,7 +169,7 @@ impl Practice {
         }
     }
 
-    fn advance_after_answer(&self) {
+    fn advance_after_answer(self: &Rc<Self>) {
         if self.auto_next.is_active() && self.lesson.borrow().answered() {
             self.lesson.borrow_mut().advance();
             self.show_card();
@@ -142,6 +177,10 @@ impl Practice {
     }
 
     fn answer(self: &Rc<Self>, input: &str) {
+        if self.speaking.get() {
+            self.request_wait();
+            return;
+        }
         let result = self.lesson.borrow_mut().submit(input);
         if !matches!(result, Answer::Correct | Answer::Incorrect) {
             return;
@@ -196,25 +235,9 @@ impl Practice {
             }
         }
         self.speech.stop();
-        self.follow_along
-            .set_markup(&speech::transcript_markup(&phrases, None));
+        self.speech.show_transcript(&phrases, &self.follow_along);
         if self.speak_typed.is_active() {
-            if advance {
-                let weak = Rc::downgrade(self);
-                self.speech.speak_then(
-                    phrases,
-                    &self.speech_status,
-                    &self.follow_along,
-                    move || {
-                        if let Some(practice) = weak.upgrade() {
-                            practice.advance_after_answer();
-                        }
-                    },
-                );
-            } else {
-                self.speech
-                    .speak(phrases, &self.speech_status, &self.follow_along);
-            }
+            self.play(phrases, advance);
         } else if advance {
             let weak = Rc::downgrade(self);
             let timer =
@@ -243,6 +266,9 @@ fn main() -> glib::ExitCode {
     let preparation = match std::env::args_os().nth(1).as_deref() {
         Some(arg) if arg == "--prepare-speech" => Some(speech::prepare_speech()),
         Some(arg) if arg == "--prepare-azure-speech" => Some(speech::prepare_azure_speech()),
+        Some(arg) if arg == "--prepare-adventure-speech" => {
+            Some(speech::prepare_adventure_speech())
+        }
         _ => None,
     };
     if let Some(result) = preparation {
@@ -262,11 +288,79 @@ fn main() -> glib::ExitCode {
             window.present();
             return;
         }
-        let (window, practice) = build_window(app, Rc::new(Speech::default()));
-        window.present();
-        practice.show_card();
+        build_launcher(app, Rc::new(|| Rc::new(Speech::default()))).present();
     });
     app.run()
+}
+
+fn build_launcher(
+    app: &adw::Application,
+    new_speech: Rc<dyn Fn() -> Rc<Speech>>,
+) -> adw::ApplicationWindow {
+    let header = adw::HeaderBar::new();
+    header.set_title_widget(Some(&adw::WindowTitle::new(
+        "Svenska / Swedish",
+        "Välj en övning · Choose an activity",
+    )));
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.append(&header);
+    let choices = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    choices.set_halign(gtk::Align::Center);
+    choices.set_valign(gtk::Align::Center);
+    choices.set_vexpand(true);
+    choices.set_margin_top(24);
+    choices.set_margin_bottom(24);
+    choices.set_margin_start(24);
+    choices.set_margin_end(24);
+    let heading = label(
+        "Vad vill du öva?\nWhat would you like to practise?",
+        "title-2",
+    );
+    choices.append(&heading);
+    let keyboard = gtk::Button::with_label("Tangentbordsövning\nKeyboard practice");
+    keyboard.set_widget_name("launcher-keyboard");
+    let story = gtk::Button::with_label("Välj ditt eget äventyr\nChoose your own adventure");
+    story.set_widget_name("launcher-story");
+    keyboard.set_hexpand(true);
+    story.set_hexpand(true);
+    choices.append(&keyboard);
+    choices.append(&story);
+    content.append(&choices);
+    let window = adw::ApplicationWindow::builder()
+        .application(app)
+        .title("Svenska · Swedish")
+        .default_width(900)
+        .default_height(600)
+        .content(&content)
+        .build();
+    let keyboard_speech = new_speech.clone();
+    keyboard.connect_clicked(glib::clone!(
+        #[weak]
+        app,
+        #[weak]
+        window,
+        move |_| {
+            let (practice_window, practice) = build_window(&app, keyboard_speech());
+            practice_window.connect_close_request({
+                let launcher = window.clone();
+                move |_| {
+                    launcher.present();
+                    glib::Propagation::Proceed
+                }
+            });
+            window.hide();
+            practice_window.present();
+            practice.show_card();
+        }
+    ));
+    story.connect_clicked(glib::clone!(
+        #[weak]
+        app,
+        #[weak]
+        window,
+        move |_| story_ui::open(&app, &window, new_speech())
+    ));
+    window
 }
 
 fn build_window(
@@ -292,6 +386,9 @@ fn build_window(
         "Level 1 · Untimed practice",
     )));
     content.append(&header);
+    let menu = gtk::Button::with_label("Meny · Menu");
+    menu.set_widget_name("activity-menu");
+    header.pack_start(&menu);
 
     let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
     body.set_margin_top(10);
@@ -305,6 +402,7 @@ fn build_window(
         "Everything · Random order",
     ]);
     category.set_tooltip_text(Some("Changing the practice set starts a new session"));
+    category.set_selected(3);
     let chooser = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     chooser.append(&gtk::Label::new(Some("Practice set")));
     category.set_hexpand(true);
@@ -322,6 +420,7 @@ fn build_window(
     symbol.set_vexpand(true);
     practice_panel.append(&symbol);
     let english = label("", "practice-hint");
+    english.set_visible(false);
     let swedish = label("", "practice-hint");
     let keys = label("", "dim-label");
     practice_panel.append(&english);
@@ -359,7 +458,8 @@ fn build_window(
     listening_panel.set_margin_bottom(12);
     listening_panel.set_margin_start(12);
     listening_panel.set_margin_end(12);
-    listening_panel.append(&label("Listen & follow · Svenska / English", "heading"));
+    let listening_heading = label("Listen & follow · Svenska", "heading");
+    listening_panel.append(&listening_heading);
     follow_along.set_vexpand(true);
     listening_panel.append(&follow_along);
     let speech_status = label("", "dim-label");
@@ -379,13 +479,16 @@ fn build_window(
     let auto_next = gtk::CheckButton::with_label("Automatic next");
     auto_next.set_active(true);
     auto_next.set_halign(gtk::Align::Start);
+    let show_english = gtk::CheckButton::with_label("Show English hints");
+    show_english.set_halign(gtk::Align::Start);
     let options = gtk::Grid::builder()
         .row_spacing(0)
         .column_spacing(16)
         .build();
     options.attach(&automatic, 0, 0, 1, 1);
     options.attach(&speak_typed, 0, 1, 1, 1);
-    options.attach(&auto_next, 1, 0, 1, 2);
+    options.attach(&auto_next, 1, 0, 1, 1);
+    options.attach(&show_english, 1, 1, 1, 1);
     options.set_halign(gtk::Align::Center);
     body.append(&options);
     body.append(&label(
@@ -407,7 +510,7 @@ fn build_window(
         .content(&content)
         .build();
     let practice = Rc::new(Practice {
-        lesson: RefCell::new(Practice::shuffled_lesson(Category::Alphabet)),
+        lesson: RefCell::new(Practice::shuffled_lesson(Category::All)),
         category,
         symbol,
         english,
@@ -421,12 +524,58 @@ fn build_window(
         automatic,
         speak_typed,
         auto_next,
+        show_english,
         next_timer: RefCell::new(None),
         speech_status,
         follow_along,
+        listening_heading,
+        speaking: Cell::new(false),
         speech,
     });
+    menu.connect_clicked(glib::clone!(
+        #[weak]
+        window,
+        move |_| window.close()
+    ));
 
+    practice.show_english.connect_toggled(glib::clone!(
+        #[weak]
+        practice,
+        move |show_english| {
+            practice.english.set_visible(show_english.is_active());
+            practice.speech.set_show_english(show_english.is_active());
+            practice
+                .listening_heading
+                .set_label(if show_english.is_active() {
+                    "Listen & follow · Svenska / English"
+                } else {
+                    "Listen & follow · Svenska"
+                });
+            practice.entry.grab_focus();
+        }
+    ));
+    let input_guard = gtk::EventControllerKey::new();
+    input_guard.set_propagation_phase(gtk::PropagationPhase::Capture);
+    input_guard.connect_key_pressed(glib::clone!(
+        #[weak]
+        practice,
+        #[upgrade_or]
+        glib::Propagation::Proceed,
+        move |_, key, _, modifiers| {
+            let editing_key = key.to_unicode().is_some_and(|c| !c.is_control())
+                || key.name().is_some_and(|name| name.starts_with("dead_"))
+                || matches!(key, gtk::gdk::Key::BackSpace | gtk::gdk::Key::Delete)
+                || (key == gtk::gdk::Key::v
+                    && modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK));
+            if practice.speaking.get() && editing_key {
+                practice.request_wait();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        }
+    ));
+    practice.entry.add_controller(input_guard);
     practice.entry.connect_changed(glib::clone!(
         #[weak]
         practice,
@@ -538,6 +687,7 @@ fn label(text: &str, class: &str) -> gtk::Label {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::time::{Duration, Instant};
 
     fn finish_playback(practice: &Practice) -> (Vec<String>, Vec<String>) {
@@ -617,7 +767,7 @@ mod tests {
         wav
     }
 
-    fn ordered_set(practice: &Practice, selected: u32) {
+    fn ordered_set(practice: &Rc<Practice>, selected: u32) {
         practice.category.set_selected(selected);
         practice
             .lesson
@@ -632,7 +782,7 @@ mod tests {
         entry.insert_text(input, &mut position);
     }
 
-    fn assert_compact_layout(window: &adw::ApplicationWindow, practice: &Practice) {
+    fn assert_compact_layout(window: &adw::ApplicationWindow, practice: &Rc<Practice>) {
         let card = learn_swedish::lesson::cards(Category::Symbols)
             .into_iter()
             .max_by_key(|card| card.keys.len())
@@ -653,6 +803,7 @@ mod tests {
                 next_phrase(9),
             ],
             Some((2, 2)),
+            true,
         ));
         practice
             .speech_status
@@ -691,6 +842,7 @@ mod tests {
             practice.automatic.upcast_ref(),
             practice.speak_typed.upcast_ref(),
             practice.auto_next.upcast_ref(),
+            practice.show_english.upcast_ref(),
         ] {
             let bounds = widget.compute_bounds(window).unwrap();
             assert!(
@@ -702,6 +854,86 @@ mod tests {
             );
         }
         practice.show_card();
+    }
+
+    fn find_button(widget: &gtk::Widget, name: &str) -> Option<gtk::Button> {
+        if widget.widget_name() == name {
+            return widget.clone().downcast::<gtk::Button>().ok();
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(button) = find_button(&current, name) {
+                return Some(button);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
+    fn assert_launcher_flow(app: &adw::Application, voice_dirs: Vec<PathBuf>) {
+        let created = Rc::new(Cell::new(0));
+        let count = created.clone();
+        let launcher = build_launcher(
+            app,
+            Rc::new(move || {
+                count.set(count.get() + 1);
+                Rc::new(Speech::for_test(voice_dirs.clone(), true))
+            }),
+        );
+        launcher.present();
+        assert_eq!(
+            created.get(),
+            0,
+            "The launcher must not create or start speech"
+        );
+        let keyboard = find_button(launcher.upcast_ref(), "launcher-keyboard").unwrap();
+        let story = find_button(launcher.upcast_ref(), "launcher-story").unwrap();
+        assert_eq!(
+            keyboard.label().as_deref(),
+            Some("Tangentbordsövning\nKeyboard practice")
+        );
+        assert_eq!(
+            story.label().as_deref(),
+            Some("Välj ditt eget äventyr\nChoose your own adventure")
+        );
+        let context = glib::MainContext::default();
+        let deadline = Instant::now() + Duration::from_millis(150);
+        while Instant::now() < deadline {
+            context.iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(launcher.is_visible());
+        assert!(launcher.width() <= 900 && launcher.height() <= 600);
+        for button in [&keyboard, &story] {
+            let bounds = button.compute_bounds(&launcher).unwrap();
+            assert!(
+                bounds.y() >= 0.0 && bounds.y() + bounds.height() <= launcher.height() as f32,
+                "Launcher option bounds: {bounds:?}, window height: {}",
+                launcher.height()
+            );
+        }
+        for (button, title, expected_count) in [
+            (&keyboard, "Swedish Keys", 1),
+            (&story, "Swedish adventure", 2),
+            (&keyboard, "Swedish Keys", 3),
+        ] {
+            button.emit_clicked();
+            assert!(!launcher.is_visible());
+            assert_eq!(created.get(), expected_count);
+            let activity = app
+                .windows()
+                .into_iter()
+                .find(|window| window.is_visible() && window.title().as_deref() == Some(title))
+                .expect("Selected activity must be visible");
+            let menu = find_button(activity.upcast_ref(), "activity-menu").unwrap();
+            menu.emit_clicked();
+            assert!(
+                launcher.is_visible(),
+                "Closing an activity must restore the launcher"
+            );
+            assert!(!activity.is_visible());
+        }
+        launcher.close();
     }
 
     #[test]
@@ -748,6 +980,9 @@ mod tests {
         }
         let speech = Rc::new(Speech::for_test(voice_dirs.clone(), true));
         let (window, practice) = build_window(&app, speech);
+        assert_eq!(practice.selected_category(), Category::All);
+        assert!(!practice.show_english.is_active());
+        assert!(!practice.english.is_visible());
         assert!(practice.auto_next.is_active());
         practice.auto_next.set_active(false);
         practice.automatic.set_active(false);
@@ -758,7 +993,44 @@ mod tests {
             context.iteration(false);
         }
         assert!(window.is_visible());
+        let character = practice.lesson.borrow().current().unwrap().character;
+        practice.show_english.set_active(true);
+        assert!(practice.english.is_visible());
+        assert_eq!(
+            practice.lesson.borrow().current().unwrap().character,
+            character
+        );
         assert_compact_layout(&window, &practice);
+        practice.show_english.set_active(false);
+        practice.next.emit_clicked();
+        assert!(!practice.english.is_visible());
+        practice.restart();
+        assert!(!practice.english.is_visible());
+        practice.play(vec![spoken_input("'").unwrap()], false);
+        assert!(!practice.entry.is_editable());
+        assert!(
+            !practice
+                .follow_along
+                .text()
+                .contains("Single quote / apostrophe")
+        );
+        let (spoken, _) = finish_playback(&practice);
+        assert_eq!(spoken.len(), 1);
+        assert!(practice.entry.is_editable());
+        practice.show_english.set_active(true);
+        assert!(
+            practice
+                .follow_along
+                .text()
+                .contains("Single quote / apostrophe")
+        );
+        practice.show_english.set_active(false);
+        assert!(
+            !practice
+                .follow_along
+                .text()
+                .contains("Single quote / apostrophe")
+        );
         let mut visited = std::collections::HashSet::new();
         let total = practice.lesson.borrow().total();
         for _ in 0..total {
@@ -769,16 +1041,20 @@ mod tests {
             );
             assert_eq!(
                 practice.symbol.text(),
-                character.to_uppercase().collect::<String>()
+                practice.lesson.borrow().current().unwrap().display()
             );
             practice.next.emit_clicked();
         }
-        assert_eq!(visited.len(), 29);
+        assert_eq!(
+            visited.len(),
+            learn_swedish::lesson::cards(Category::All).len()
+        );
         assert!(practice.lesson.borrow().current().is_none());
         practice.next.emit_clicked();
         assert!(practice.lesson.borrow().current().is_some());
         assert_eq!(practice.lesson.borrow().position(), 0);
         // Keep the remaining widget checks independent of random card ordering.
+        practice.show_english.set_active(true);
         ordered_set(&practice, 0);
         assert_eq!(practice.symbol.text(), "A");
         practice.entry.set_text("z");
@@ -789,6 +1065,11 @@ mod tests {
             practice.speech_status.text(),
             "Speaking Swedish: Bokstaven Z"
         );
+        assert!(practice.follow_along.text().contains("Letter Z"));
+        practice.show_english.set_active(false);
+        assert!(!practice.follow_along.text().contains("Letter Z"));
+        assert!(practice.follow_along.text().contains("Bokstaven Z"));
+        practice.show_english.set_active(true);
         assert!(practice.follow_along.text().contains("Letter Z"));
         let voice = practice.follow_along.tooltip_text().unwrap();
         let (spoken, highlighted) = finish_playback(&practice);
@@ -826,6 +1107,39 @@ mod tests {
         assert_eq!(practice.entry.text(), "å");
         assert_eq!(practice.entry.selection_bounds(), Some((0, 1)));
         assert_eq!(practice.lesson.borrow().mistakes(), mistakes + 1);
+        assert!(!practice.entry.is_editable());
+        let status = practice.speech_status.text();
+        practice.answer("a");
+        let reminder = practice.speech_status.text();
+        assert_ne!(reminder, status);
+        assert!(
+            (0..wait_phrase_count()).any(
+                |index| reminder == format!("Speaking Swedish: {}", wait_phrase(index).swedish)
+            )
+        );
+        let controllers = practice.entry.observe_controllers();
+        let guard = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index))
+            .filter_map(|controller| controller.downcast::<gtk::EventControllerKey>().ok())
+            .find(|controller| controller.propagation_phase() == gtk::PropagationPhase::Capture)
+            .unwrap();
+        assert!(guard.emit_by_name::<bool>(
+            "key-pressed",
+            &[&gtk::gdk::Key::a, &0_u32, &gtk::gdk::ModifierType::empty()],
+        ));
+        assert_eq!(practice.entry.text(), "å");
+        assert_eq!(practice.lesson.borrow().mistakes(), mistakes + 1);
+        assert!(!practice.lesson.borrow().answered());
+        assert_eq!(practice.speech_status.text(), reminder);
+        let (spoken, _) = finish_playback(&practice);
+        assert_eq!(
+            spoken.len(),
+            3,
+            "The reminder must be followed by the interrupted word and its feedback"
+        );
+        assert_eq!(spoken[0], reminder);
+        assert_eq!(spoken[1], "Speaking Swedish: Bokstaven Å");
+        assert!(practice.entry.is_editable());
         replace_selected_input(&practice.entry, "a");
         assert_eq!(practice.entry.text(), "a");
         assert!(practice.feedback.text().contains("Correct!"));
@@ -945,6 +1259,8 @@ mod tests {
         assert!(practice.entry.text().is_empty());
 
         practice.automatic.set_active(true);
+        assert!(!practice.entry.is_editable());
+        finish_playback(&practice);
         practice.entry.set_text("1");
         wait_for_advance(&practice, 1);
         assert_eq!(practice.symbol.text(), "2");
@@ -1000,6 +1316,40 @@ mod tests {
         assert!(!practice.entry.is_sensitive());
         practice.auto_next.set_active(false);
 
+        ordered_set(&practice, 1);
+        practice.auto_next.set_active(true);
+        practice.entry.set_text("0");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while practice.speech_status.text() == "Speaking Swedish: Siffran noll" {
+            assert!(Instant::now() < deadline);
+            context.iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let interrupted = practice.speech_status.text();
+        let voice = practice.follow_along.tooltip_text();
+        practice.request_wait();
+        let reminder = practice.speech_status.text();
+        practice.request_wait();
+        assert_eq!(practice.speech_status.text(), reminder);
+        assert!(!practice.entry.is_editable());
+        assert_eq!(practice.lesson.borrow().position(), 0);
+        assert_eq!(practice.follow_along.tooltip_text(), voice);
+        let spoken = wait_for_advance(&practice, 0);
+        assert_eq!(spoken.len(), 3, "{spoken:?}");
+        assert_eq!(spoken[0], reminder);
+        assert_eq!(
+            spoken[1], interrupted,
+            "Restart the interrupted feedback, not the earlier number"
+        );
+        assert!(
+            (0..next_phrase_count())
+                .any(|index| spoken[2]
+                    == format!("Speaking Swedish: {}", next_phrase(index).swedish))
+        );
+        assert!(practice.entry.is_editable());
+        assert!(practice.entry.text().is_empty());
+        practice.auto_next.set_active(false);
+
         ordered_set(&practice, 0);
         for voice_dir in &voice_dirs {
             fs::remove_file(voice_dir.join("Bokstaven A.wav")).unwrap();
@@ -1020,6 +1370,19 @@ mod tests {
             "Speech failure must not advance"
         );
         assert!(practice.next_timer.borrow().is_none());
+        ordered_set(&practice, 1);
+        practice.entry.set_text("a");
+        assert!(
+            practice
+                .speech_status
+                .text()
+                .contains("Speech audio is missing")
+        );
+        assert!(!practice.speaking.get());
+        assert!(
+            practice.entry.is_editable(),
+            "Speech failure must release wrong-answer input"
+        );
         practice.auto_next.set_active(false);
         if std::env::var_os("LEARN_SWEDISH_TEST_REAL_AUDIO").is_some() {
             for voice in ["sv_SE-nst-medium", "sv_SE-alma-medium"] {
@@ -1032,10 +1395,11 @@ mod tests {
                     ],
                     false,
                 ));
-                real_speech.speak(
+                real_speech.speak_then(
                     vec![spoken_input("å").unwrap(), feedback_phrase(true, 15)],
                     &practice.speech_status,
                     &practice.follow_along,
+                    |_| {},
                 );
                 let (spoken, highlighted) = finish_playback(&practice);
                 assert_eq!(
@@ -1052,6 +1416,9 @@ mod tests {
                 );
             }
         }
+        crate::story_ui::test_flow(&app, &silent_wav());
+        window.hide();
+        assert_launcher_flow(&app, voice_dirs.clone());
         window.close();
         for voice_dir in &voice_dirs {
             for entry in fs::read_dir(voice_dir).unwrap() {
