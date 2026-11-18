@@ -1,7 +1,7 @@
 # Swedish Keys
 
 A native Rust GTK4/libadwaita app for learning the Swedish PC keyboard on
-Ubuntu GNOME. The interface is English, with Swedish names beside each prompt.
+Ubuntu GNOME and Windows. The interface is English, with Swedish names beside each prompt.
 No word associations are used.
 
 The default window is **900 × 600 logical pixels**, designed to sit comfortably
@@ -123,17 +123,52 @@ and adventure banks. Until preparation or installation is complete,
 the book still works as a text adventure; missing audio is reported visibly.
 Generated story audio is also subject to the Azure terms described below.
 
+## Download and run on Windows 11
+
+Download `learn-swedish-0.3.0-windows-x64.zip` from
+[GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
+Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
+inside the extracted folder. Keep the extracted files together. No WSL,
+administrator access, Rust or separate GTK install is needed. Add the Swedish
+keyboard in Windows language settings and use **Windows+Space** to select it.
+The portable ZIP is not code-signed.
+
+To add optional offline voices, download the existing
+[v0.2.0 speech archive](https://github.com/hohum/learn_swedish/releases/download/v0.2.0/learn-swedish-speech-0.2.0.tar.gz).
+It is the same keyboard and story content; no Azure account or regeneration is
+needed. See the Azure terms note under Ubuntu below. Close the app, open
+PowerShell in the extracted app folder (the folder containing `bin`), and run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install_windows_speech.ps1 -Archive "$HOME\Downloads\learn-swedish-speech-0.2.0.tar.gz"
+```
+
+Use the actual path to the archive if you saved it elsewhere. The script checks
+the archive's SHA-256 and installs both banks into the portable folder without
+symlinks. `-ExecutionPolicy Bypass` only applies to that PowerShell process.
+Speech preparation still runs on Ubuntu, not in the Windows app.
+
+### Build the Windows ZIP
+
+Run these commands in **MSYS2 UCRT64** on Windows:
+
+```sh
+pacman -S --needed mingw-w64-ucrt-x86_64-{rust,gcc,pkgconf,libadwaita,gst-plugins-base,gst-plugins-good} zip
+bash scripts/build_windows.sh
+```
+
+The ZIP is created in `dist`. `THIRD-PARTY.txt` lists its bundled packages.
+
 ## Download and install on Ubuntu 26.04
 
 Download the latest `.deb` from [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 The prebuilt downloads target **Ubuntu 26.04, Intel/AMD 64-bit**, not older
-Ubuntu releases, ARM devices or Windows directly. On Windows, use Ubuntu 26.04
-under WSLg.
+Ubuntu releases or ARM devices.
 
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.2.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.3.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 
@@ -144,7 +179,7 @@ Verify downloads with `sha256sum --ignore-missing -c SHA256SUMS` after downloadi
 your chosen files and their checksum file.
 
 **Speech recordings are a separate optional download**, not bundled in the
-app packages. Download `learn-swedish-speech-0.2.0.tar.gz` from the release for
+app packages. Download [learn-swedish-speech-0.2.0.tar.gz](https://github.com/hohum/learn_swedish/releases/download/v0.2.0/learn-swedish-speech-0.2.0.tar.gz) for
 the keyboard and adventure recordings and their word timings.
 Close the app, then install the recordings from your download directory:
 

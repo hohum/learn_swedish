@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(windows, not(debug_assertions), not(test)),
+    windows_subsystem = "windows"
+)]
+
 mod speech;
 mod story_ui;
 
@@ -263,15 +268,8 @@ impl Practice {
 }
 
 fn main() -> glib::ExitCode {
-    let preparation = match std::env::args_os().nth(1).as_deref() {
-        Some(arg) if arg == "--prepare-speech" => Some(speech::prepare_speech()),
-        Some(arg) if arg == "--prepare-azure-speech" => Some(speech::prepare_azure_speech()),
-        Some(arg) if arg == "--prepare-adventure-speech" => {
-            Some(speech::prepare_adventure_speech())
-        }
-        _ => None,
-    };
-    if let Some(result) = preparation {
+    #[cfg(unix)]
+    if let Some(result) = prepare_speech_from_args() {
         return match result {
             Ok(()) => glib::ExitCode::SUCCESS,
             Err(error) => {
@@ -280,6 +278,7 @@ fn main() -> glib::ExitCode {
             }
         };
     }
+
     let app = adw::Application::builder()
         .application_id("io.github.hohum.LearnSwedish")
         .build();
@@ -291,6 +290,18 @@ fn main() -> glib::ExitCode {
         build_launcher(app, Rc::new(|| Rc::new(Speech::default()))).present();
     });
     app.run()
+}
+
+#[cfg(unix)]
+fn prepare_speech_from_args() -> Option<Result<(), Box<dyn std::error::Error>>> {
+    match std::env::args_os().nth(1).as_deref() {
+        Some(arg) if arg == "--prepare-speech" => Some(speech::prepare_speech()),
+        Some(arg) if arg == "--prepare-azure-speech" => Some(speech::prepare_azure_speech()),
+        Some(arg) if arg == "--prepare-adventure-speech" => {
+            Some(speech::prepare_adventure_speech())
+        }
+        _ => None,
+    }
 }
 
 fn build_launcher(
@@ -957,11 +968,8 @@ mod tests {
         for (voice_index, voice_dir) in voice_dirs.iter().enumerate() {
             fs::create_dir(voice_dir).unwrap();
             for phrase in learn_swedish::lesson::speech_phrases() {
-                fs::write(
-                    voice_dir.join(format!("{}.wav", phrase.swedish)),
-                    silent_wav(),
-                )
-                .unwrap();
+                let stem = speech::recording_stem(&phrase);
+                fs::write(voice_dir.join(format!("{stem}.wav")), silent_wav()).unwrap();
                 let words: Vec<_> = phrase.swedish.split_whitespace().collect();
                 let count = words.len();
                 let duration = if voice_index == 0 { 500_000 } else { 350_000 };
@@ -969,7 +977,7 @@ mod tests {
                 serde_json::json!({"word": word, "start_us": index * duration / count, "end_us": (index + 1) * duration / count})
             }).collect();
                 fs::write(
-                    voice_dir.join(format!("{}.json", phrase.swedish)),
+                    voice_dir.join(format!("{stem}.json")),
                     serde_json::to_vec(
                         &serde_json::json!({"duration_us": 500_000, "words": timings}),
                     )

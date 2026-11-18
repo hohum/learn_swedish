@@ -1,13 +1,18 @@
 use adw::prelude::*;
 use adw::{glib, gtk};
 use gstreamer::{self as gst, prelude::*};
-use learn_swedish::lesson::{Phrase, speech_phrases};
+use learn_swedish::lesson::Phrase;
+#[cfg(unix)]
+use learn_swedish::lesson::speech_phrases;
 use serde::Deserialize;
 use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
+#[cfg(unix)]
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -130,6 +135,14 @@ pub struct Speech {
 }
 
 fn data_dir() -> PathBuf {
+    #[cfg(windows)]
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(bin) = exe.parent()
+        && let Some(bundle) = bin.parent()
+        && bundle.join("speech").is_dir()
+    {
+        return bundle.to_path_buf();
+    }
     glib::user_data_dir().join("learn-swedish")
 }
 
@@ -141,6 +154,14 @@ fn audio_directories(data: &Path) -> Vec<PathBuf> {
     } else {
         VOICES.iter().map(|voice| speech.join(voice)).collect()
     }
+}
+
+pub fn recording_stem(phrase: &Phrase) -> String {
+    let stem = phrase.audio_stem();
+    #[cfg(windows)]
+    // Match Windows tar's replacement of invalid filename characters on import.
+    let stem = stem.replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+    stem
 }
 
 impl Default for Speech {
@@ -164,6 +185,7 @@ impl Drop for Speech {
     }
 }
 
+#[cfg(unix)]
 pub fn prepare_azure_speech() -> Result<(), Box<dyn Error>> {
     let data = data_dir();
     let python = data.join("azure-env").join("bin").join("python");
@@ -220,6 +242,7 @@ pub fn prepare_azure_speech() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(unix)]
 pub fn prepare_adventure_speech() -> Result<(), Box<dyn Error>> {
     let data = data_dir();
     let python = data.join("azure-env").join("bin").join("python");
@@ -334,6 +357,7 @@ pub fn prepare_adventure_speech() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn reuse_cached_recording(
     caches: &[PathBuf],
     target: &Path,
@@ -358,6 +382,7 @@ fn reuse_cached_recording(
     Ok(false)
 }
 
+#[cfg(unix)]
 fn reuse_azure_audio(
     current: &Path,
     staging: &Path,
@@ -381,10 +406,12 @@ fn reuse_azure_audio(
     Ok(missing)
 }
 
+#[cfg(unix)]
 fn publish_azure(parent: &Path, generation: &Path) -> io::Result<()> {
     publish_bank(parent, generation, AZURE_VOICE)
 }
 
+#[cfg(unix)]
 fn publish_bank(parent: &Path, generation: &Path, name: &str) -> io::Result<()> {
     let link = parent.join(format!("azure-select-{}", glib::uuid_string_random()));
     std::os::unix::fs::symlink(
@@ -405,6 +432,7 @@ fn publish_bank(parent: &Path, generation: &Path, name: &str) -> io::Result<()> 
     Ok(())
 }
 
+#[cfg(unix)]
 fn clean_staging(staging: &Path) -> io::Result<()> {
     // Only remove files from this preparation's private staging directory.
     for entry in fs::read_dir(staging)? {
@@ -413,6 +441,7 @@ fn clean_staging(staging: &Path) -> io::Result<()> {
     fs::remove_dir(staging)
 }
 
+#[cfg(unix)]
 pub fn prepare_speech() -> Result<(), Box<dyn Error>> {
     let data = data_dir();
     let python = data.join("piper-env").join("bin").join("python");
@@ -447,6 +476,7 @@ pub fn prepare_speech() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn prepare_voice(python: &Path, model: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(destination)?;
     let staging = destination.join(format!("prepare-{}", glib::uuid_string_random()));
@@ -465,6 +495,7 @@ fn prepare_voice(python: &Path, model: &Path, destination: &Path) -> Result<(), 
     Ok(())
 }
 
+#[cfg(unix)]
 fn generate_audio(
     python: &Path,
     model: &Path,
@@ -510,6 +541,7 @@ fn generate_audio(
     Ok(())
 }
 
+#[cfg(unix)]
 fn validate_audio(staging: &Path, phrases: &[Phrase]) -> Result<(), Box<dyn Error>> {
     for phrase in phrases {
         let path = staging.join(format!("{}.wav", phrase.audio_stem()));
@@ -643,7 +675,10 @@ impl Speech {
         let parser = gst::ElementFactory::make("wavparse").build()?;
         let convert = gst::ElementFactory::make("audioconvert").build()?;
         let resample = gst::ElementFactory::make("audioresample").build()?;
+        #[cfg(not(windows))]
         let sink_factory = "pulsesink";
+        #[cfg(windows)]
+        let sink_factory = "directsoundsink";
         #[cfg(test)]
         let sink_factory = if self.muted { "fakesink" } else { sink_factory };
         let sink = gst::ElementFactory::make(sink_factory)
@@ -748,7 +783,8 @@ impl Speech {
                     || audio_dir.clone(),
                     |voice| self.story_dir.join(voice.azure_name()),
                 );
-                let audio = directory.join(format!("{}.wav", phrase.audio_stem()));
+                let stem = recording_stem(phrase);
+                let audio = directory.join(format!("{stem}.wav"));
                 if !audio.is_file() {
                     return Err(io::Error::other(format!(
                         "Speech audio is missing: {}",
@@ -756,10 +792,8 @@ impl Speech {
                     ))
                     .into());
                 }
-                let timing = Timing::load(
-                    &directory.join(format!("{}.json", phrase.audio_stem())),
-                    &phrase.swedish,
-                )?;
+                let timing =
+                    Timing::load(&directory.join(format!("{stem}.json")), &phrase.swedish)?;
                 Ok(Clip {
                     phrase: phrase.clone(),
                     audio,
@@ -911,6 +945,9 @@ impl Speech {
 
     fn report_error(status: &gtk::Label, message: &str) {
         eprintln!("Speech: {message}");
+        #[cfg(windows)]
+        let setup = "See README for the optional speech download and check Windows audio output.";
+        #[cfg(not(windows))]
         let setup = if message.contains(ADVENTURE_BANK) {
             "Prepare story voices: cargo run --locked -- --prepare-adventure-speech."
         } else {
@@ -955,6 +992,57 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
+    #[ignore = "Requires the optional voice banks and a Windows audio device"]
+    fn portable_windows_banks_play_with_bundled_audio_plugins() {
+        let data = data_dir();
+        let keyboard = speech_clip_path(&data, AZURE_VOICE, "Bokstaven Å");
+        let speech = Speech::default();
+        let story = learn_swedish::adventure::speech_phrases();
+        let mut clips = vec![(keyboard, "Bokstaven Å".to_owned())];
+        for phrase in learn_swedish::lesson::speech_phrases() {
+            let audio = speech_clip_path(&data, AZURE_VOICE, &recording_stem(&phrase));
+            assert!(audio.is_file(), "Missing {}", audio.display());
+            Timing::load(&audio.with_extension("json"), &phrase.swedish).unwrap();
+        }
+        for voice in ["sv-SE-SofieNeural", "sv-SE-MattiasNeural"] {
+            let phrase = story
+                .iter()
+                .find(|phrase| phrase.voice.map(|voice| voice.azure_name()) == Some(voice))
+                .expect("Story includes both voices");
+            let bank = format!("{ADVENTURE_BANK}/{voice}");
+            clips.push((
+                speech_clip_path(&data, &bank, &phrase.audio_stem()),
+                phrase.swedish.clone(),
+            ));
+        }
+        for (audio, text) in clips {
+            let timing = Timing::load(&audio.with_extension("json"), &text).unwrap();
+            assert_eq!(timing.word_at(timing.words[0].start_us), Some(0));
+            let pipeline = speech.media(&audio).unwrap();
+            let message = pipeline.bus().unwrap().timed_pop_filtered(
+                gst::ClockTime::from_seconds(10),
+                &[gst::MessageType::Error, gst::MessageType::Eos],
+            );
+            pipeline.set_state(gst::State::Null).unwrap();
+            assert!(
+                matches!(
+                    message.as_ref().map(|message| message.view()),
+                    Some(gst::MessageView::Eos(_))
+                ),
+                "Playback failed for {}: {message:?}",
+                audio.display()
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    fn speech_clip_path(data: &Path, bank: &str, stem: &str) -> PathBuf {
+        data.join("speech").join(bank).join(format!("{stem}.wav"))
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn azure_update_reuses_valid_recordings_and_requests_only_missing_phrases() {
         let data =
             std::env::temp_dir().join(format!("swedish-reuse-test-{}", glib::uuid_string_random()));
@@ -995,6 +1083,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn azure_library_is_selected_only_when_published_and_replaces_the_bank_atomically() {
         let data =
             std::env::temp_dir().join(format!("swedish-azure-test-{}", glib::uuid_string_random()));
