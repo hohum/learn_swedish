@@ -82,8 +82,13 @@ activity again starts a fresh session.
 and response translations. **Read aloud** reads the page, its question and all
 four options, then reads your selected response and the reply. Responses are
 locked during speech; turn off Read aloud to stop playback and read at your own
-pace. Replay repeats the current page or feedback. Highlighting uses measured
-word timings and automatically follows the current passage in its scroll area.
+pace. Press **Space** to pause or resume speech immediately (and type spaces
+normally once speech finishes), **Left Arrow** to repeat the current sentence,
+toggle **Pause after each sentence** (on by default) to pause automatically at
+each sentence boundary, or use **Skip** (`Ctrl+→`) to skip the
+current question without answering. Replay repeats the current page or feedback.
+Highlighting uses measured word timings and automatically follows the current
+passage in its scroll area.
 Male roles use **Azure Mattias**; female roles, including your wife, use
 **Azure Sofie**. The narrator is male. Several characters share each voice,
 but their Swedish role labels identify who is speaking.
@@ -125,7 +130,7 @@ Generated story audio is also subject to the Azure terms described below.
 
 ## Download and run on Windows 11
 
-Download `learn-swedish-0.3.0-windows-x64.zip` from
+Download `learn-swedish-0.4.0-windows-x64.zip` from
 [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
 inside the extracted folder. Keep the extracted files together. No WSL,
@@ -168,7 +173,7 @@ Ubuntu releases or ARM devices.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.3.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.4.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 
@@ -430,6 +435,10 @@ After a correct answer, input remains locked until the next card.
 **Speak each new symbol in Swedish** controls prompts;
 **Speak my answers and feedback in Swedish** controls typed-character speech
 followed by the randomly selected answer feedback. Both default to on.
+**Pause after each sentence** is also on by default: press **Space** to pause
+or resume speech immediately (Space types normally once speech finishes), press
+**Left Arrow** to repeat the current sentence, or use **Next / Skip**
+(`Ctrl+→`) to skip the current card without answering.
 Replay, typing another character, Next, switching sets, turning off a speech
 checkbox and closing the window stop the entire current sequence. The bilingual
 transcript remains readable after playback, with highlighting cleared.

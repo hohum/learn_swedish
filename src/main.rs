@@ -32,6 +32,7 @@ struct Practice {
     speak_typed: gtk::CheckButton,
     auto_next: gtk::CheckButton,
     show_english: gtk::CheckButton,
+    pause_sentences: gtk::CheckButton,
     next_timer: RefCell<Option<glib::SourceId>>,
     speech_status: gtk::Label,
     follow_along: gtk::Label,
@@ -70,6 +71,7 @@ impl Practice {
     fn show_card(self: &Rc<Self>) {
         self.cancel_next_timer();
         self.speech.stop();
+        self.speech.clear_last_sentence();
         self.speech.show_transcript(&[], &self.follow_along);
         self.entry.set_text("");
         let lesson = self.lesson.borrow();
@@ -155,6 +157,36 @@ impl Practice {
                 }
             },
         );
+    }
+
+    fn skip(self: &Rc<Self>) {
+        if self.lesson.borrow().current().is_none() {
+            self.restart();
+        } else {
+            self.lesson.borrow_mut().advance();
+            self.show_card();
+        }
+    }
+
+    fn repeat_sentence(self: &Rc<Self>) -> bool {
+        if self.speech.repeat_sentence() {
+            return true;
+        }
+        if self.speech.has_last_sentence() {
+            self.cancel_next_timer();
+            self.speaking.set(true);
+            self.entry.set_editable(false);
+            let weak = Rc::downgrade(self);
+            return self.speech.repeat_last_sentence(move |_| {
+                if let Some(practice) = weak.upgrade() {
+                    practice.speaking.set(false);
+                    practice
+                        .entry
+                        .set_editable(!practice.lesson.borrow().answered());
+                }
+            });
+        }
+        false
     }
 
     fn request_wait(&self) {
@@ -492,6 +524,9 @@ fn build_window(
     auto_next.set_halign(gtk::Align::Start);
     let show_english = gtk::CheckButton::with_label("Show English hints");
     show_english.set_halign(gtk::Align::Start);
+    let pause_sentences = gtk::CheckButton::with_label("Pause after each sentence");
+    pause_sentences.set_active(true);
+    pause_sentences.set_halign(gtk::Align::Start);
     let options = gtk::Grid::builder()
         .row_spacing(0)
         .column_spacing(16)
@@ -500,10 +535,11 @@ fn build_window(
     options.attach(&speak_typed, 0, 1, 1, 1);
     options.attach(&auto_next, 1, 0, 1, 1);
     options.attach(&show_english, 1, 1, 1, 1);
+    options.attach(&pause_sentences, 2, 0, 1, 1);
     options.set_halign(gtk::Align::Center);
     body.append(&options);
     body.append(&label(
-        "Use Ubuntu’s Swedish input source · AltGr = Right Alt · No time limit",
+        "Swedish keyboard · AltGr = Right Alt · Space: pause/resume · ←: repeat · Ctrl+→: skip",
         "dim-label",
     ));
     let clamp = adw::Clamp::builder().maximum_size(960).child(&body).build();
@@ -536,6 +572,7 @@ fn build_window(
         speak_typed,
         auto_next,
         show_english,
+        pause_sentences,
         next_timer: RefCell::new(None),
         speech_status,
         follow_along,
@@ -565,6 +602,44 @@ fn build_window(
             practice.entry.grab_focus();
         }
     ));
+    let playback_keys = gtk::EventControllerKey::new();
+    playback_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    playback_keys.connect_key_pressed(glib::clone!(
+        #[weak]
+        practice,
+        #[upgrade_or]
+        glib::Propagation::Proceed,
+        move |_, key, _, modifiers| {
+            let shortcut_modifiers = modifiers
+                & (gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::ALT_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK);
+            if key == gtk::gdk::Key::space && shortcut_modifiers.is_empty() {
+                if practice.speech.toggle_pause() {
+                    return glib::Propagation::Stop;
+                }
+            } else if key == gtk::gdk::Key::Left && shortcut_modifiers.is_empty() {
+                if practice.repeat_sentence() {
+                    return glib::Propagation::Stop;
+                }
+            } else if key == gtk::gdk::Key::Right
+                && shortcut_modifiers == gtk::gdk::ModifierType::CONTROL_MASK
+            {
+                practice.skip();
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        }
+    ));
+    window.add_controller(playback_keys);
+    practice.pause_sentences.connect_toggled(glib::clone!(
+        #[weak]
+        practice,
+        move |pause_sentences| {
+            practice.speech.set_auto_pause(pause_sentences.is_active());
+            practice.entry.grab_focus();
+        }
+    ));
     let input_guard = gtk::EventControllerKey::new();
     input_guard.set_propagation_phase(gtk::PropagationPhase::Capture);
     input_guard.connect_key_pressed(glib::clone!(
@@ -573,6 +648,16 @@ fn build_window(
         #[upgrade_or]
         glib::Propagation::Proceed,
         move |_, key, _, modifiers| {
+            if key == gtk::gdk::Key::space
+                && (modifiers
+                    & (gtk::gdk::ModifierType::CONTROL_MASK
+                        | gtk::gdk::ModifierType::ALT_MASK
+                        | gtk::gdk::ModifierType::SUPER_MASK))
+                    .is_empty()
+                && practice.speech.is_active()
+            {
+                return glib::Propagation::Stop;
+            }
             let editing_key = key.to_unicode().is_some_and(|c| !c.is_control())
                 || key.name().is_some_and(|name| name.starts_with("dead_"))
                 || matches!(key, gtk::gdk::Key::BackSpace | gtk::gdk::Key::Delete)
@@ -602,14 +687,7 @@ fn build_window(
     practice.next.connect_clicked(glib::clone!(
         #[weak]
         practice,
-        move |_| {
-            if practice.lesson.borrow().current().is_none() {
-                practice.restart();
-            } else {
-                practice.lesson.borrow_mut().advance();
-                practice.show_card();
-            }
-        }
+        move |_| practice.skip()
     ));
     restart.connect_clicked(glib::clone!(
         #[weak]
@@ -854,6 +932,7 @@ mod tests {
             practice.speak_typed.upcast_ref(),
             practice.auto_next.upcast_ref(),
             practice.show_english.upcast_ref(),
+            practice.pause_sentences.upcast_ref(),
         ] {
             let bounds = widget.compute_bounds(window).unwrap();
             assert!(
@@ -992,6 +1071,7 @@ mod tests {
         assert!(!practice.show_english.is_active());
         assert!(!practice.english.is_visible());
         assert!(practice.auto_next.is_active());
+        assert!(practice.pause_sentences.is_active());
         practice.auto_next.set_active(false);
         practice.automatic.set_active(false);
         window.present();
@@ -1001,6 +1081,137 @@ mod tests {
             context.iteration(false);
         }
         assert!(window.is_visible());
+        let window_keys = (0..window.observe_controllers().n_items())
+            .filter_map(|index| window.observe_controllers().item(index))
+            .filter_map(|controller| controller.downcast::<gtk::EventControllerKey>().ok())
+            .find(|controller| controller.propagation_phase() == gtk::PropagationPhase::Capture)
+            .unwrap();
+        let wait_until_paused = |practice: &Practice| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !practice.speech.is_paused() {
+                assert!(
+                    Instant::now() < deadline,
+                    "Speech did not pause: {}",
+                    practice.speech_status.text()
+                );
+                context.iteration(false);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        assert!(!window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        practice.play(
+            vec![spoken_input("a").unwrap(), feedback_phrase(true, 0)],
+            false,
+        );
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert!(practice.speech.is_paused());
+        assert!(practice.speech_status.text().starts_with("Paused ·"));
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert!(!practice.speech.is_paused());
+        assert_eq!(
+            practice.speech_status.text(),
+            "Speaking Swedish: Bokstaven A"
+        );
+        wait_until_paused(&practice);
+        assert!(
+            practice
+                .speech_status
+                .text()
+                .contains("Paused after sentence"),
+            "Unexpected status after pause: {:?}",
+            practice.speech_status.text()
+        );
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::Left,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert!(!practice.speech.is_paused());
+        assert_eq!(
+            practice.speech_status.text(),
+            "Speaking Swedish: Bokstaven A"
+        );
+        wait_until_paused(&practice);
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert_eq!(
+            practice.speech_status.text(),
+            format!("Speaking Swedish: {}", feedback_phrase(true, 0).swedish)
+        );
+        finish_playback(&practice);
+        assert!(!window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::Left,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert_eq!(
+            practice.speech_status.text(),
+            format!("Speaking Swedish: {}", feedback_phrase(true, 0).swedish)
+        );
+        finish_playback(&practice);
+        let before_skip = practice.lesson.borrow().position();
+        practice.play(vec![spoken_input("a").unwrap()], false);
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::space,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty()
+            ],
+        ));
+        assert!(practice.speech.is_paused());
+        assert!(window_keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::Right,
+                &0_u32,
+                &gtk::gdk::ModifierType::CONTROL_MASK,
+            ],
+        ));
+        assert_eq!(practice.lesson.borrow().position(), before_skip + 1);
+        assert!(!practice.speech.is_active());
+        practice.pause_sentences.set_active(false);
         let character = practice.lesson.borrow().current().unwrap().character;
         practice.show_english.set_active(true);
         assert!(practice.english.is_visible());

@@ -15,10 +15,12 @@ struct Reader {
     choices: [gtk::Button; 4],
     entry: gtk::Entry,
     submit: gtk::Button,
+    skip: gtk::Button,
     next: gtk::Button,
     status: gtk::Label,
     english: gtk::CheckButton,
     automatic: gtk::CheckButton,
+    pause_sentences: gtk::CheckButton,
     replay: gtk::Button,
     speaking: Cell<bool>,
 }
@@ -44,7 +46,35 @@ impl Reader {
         }
         self.next
             .set_sensitive(!self.speaking.get() && book.selected.is_some());
+        self.skip.set_sensitive(!book.finished);
         self.replay.set_sensitive(!book.finished);
+    }
+
+    fn skip(self: &Rc<Self>) {
+        if self.book.borrow_mut().skip() {
+            self.show();
+        }
+    }
+
+    fn repeat_sentence(self: &Rc<Self>) -> bool {
+        if self.speech.repeat_sentence() {
+            return true;
+        }
+        if self.speech.has_last_sentence() {
+            self.speaking.set(true);
+            self.controls();
+            let weak = Rc::downgrade(self);
+            return self.speech.repeat_last_sentence(move |_| {
+                if let Some(reader) = weak.upgrade() {
+                    reader.speaking.set(false);
+                    reader.controls();
+                    if reader.entry.is_sensitive() {
+                        reader.entry.grab_focus();
+                    }
+                }
+            });
+        }
+        false
     }
 
     fn speak(self: &Rc<Self>) {
@@ -66,6 +96,7 @@ impl Reader {
 
     fn show(self: &Rc<Self>) {
         self.speech.stop();
+        self.speech.clear_last_sentence();
         self.entry.set_text("");
         let book = self.book.borrow();
         self.scene.set(book.page().scene);
@@ -230,9 +261,12 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
     right.append(&entry);
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let submit = gtk::Button::with_label("Svara · Answer");
+    let skip = gtk::Button::with_label("Skip");
+    skip.set_tooltip_text(Some("Skip the current question without answering (Ctrl+→)"));
     let next = gtk::Button::with_label("Fortsätt · Continue");
     next.add_css_class("suggested-action");
     actions.append(&submit);
+    actions.append(&skip);
     actions.append(&next);
     right.append(&actions);
     columns.append(&right);
@@ -241,10 +275,13 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
     let english = gtk::CheckButton::with_label("Show English hints");
     let automatic = gtk::CheckButton::with_label("Read aloud");
     automatic.set_active(true);
+    let pause_sentences = gtk::CheckButton::with_label("Pause after each sentence");
+    pause_sentences.set_active(true);
     let replay = gtk::Button::with_label("Replay");
     let restart = gtk::Button::with_label("Restart book");
     options.append(&english);
     options.append(&automatic);
+    options.append(&pause_sentences);
     options.append(&replay);
     options.append(&restart);
     body.append(&options);
@@ -280,13 +317,48 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         choices,
         entry,
         submit,
+        skip,
         next,
         status,
         english,
         automatic,
+        pause_sentences,
         replay,
         speaking: Cell::new(false),
     });
+    let playback_keys = gtk::EventControllerKey::new();
+    playback_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    playback_keys.connect_key_pressed(glib::clone!(
+        #[weak]
+        reader,
+        #[upgrade_or]
+        glib::Propagation::Proceed,
+        move |_, key, _, modifiers| {
+            let shortcut_modifiers = modifiers
+                & (gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::ALT_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK);
+            let editing_text = reader.entry.is_sensitive() && !reader.entry.text().is_empty();
+            if key == gtk::gdk::Key::space && shortcut_modifiers.is_empty() {
+                if reader.speech.toggle_pause() {
+                    return glib::Propagation::Stop;
+                }
+            } else if key == gtk::gdk::Key::Left && shortcut_modifiers.is_empty() && !editing_text {
+                if reader.repeat_sentence() {
+                    return glib::Propagation::Stop;
+                }
+            } else if key == gtk::gdk::Key::Right
+                && shortcut_modifiers == gtk::gdk::ModifierType::CONTROL_MASK
+                && !editing_text
+                && !reader.book.borrow().finished
+            {
+                reader.skip();
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        }
+    ));
+    window.add_controller(playback_keys);
     back.connect_clicked(glib::clone!(
         #[weak]
         window,
@@ -308,6 +380,16 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         #[weak]
         reader,
         move |_| reader.answer(&reader.entry.text())
+    ));
+    reader.skip.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        move |_| reader.skip()
+    ));
+    reader.pause_sentences.connect_toggled(glib::clone!(
+        #[weak]
+        reader,
+        move |toggle| reader.speech.set_auto_pause(toggle.is_active())
     ));
     reader.next.connect_clicked(glib::clone!(
         #[weak]
@@ -513,32 +595,125 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
         .unwrap();
     }
     let (window, reader) = build(app, Rc::new(Speech::for_story_test(directory.clone())));
+    assert!(reader.pause_sentences.is_active());
     reader.automatic.set_active(false);
     window.present();
     reader.show();
     let context = glib::MainContext::default();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while (window.width() == 0 || window.height() == 0) && Instant::now() < deadline {
+        context.iteration(false);
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let settle = Instant::now() + Duration::from_millis(100);
     while Instant::now() < settle {
         context.iteration(false);
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(window.width() <= 900 && window.height() <= 600);
-    for widget in [
-        reader.entry.upcast_ref::<gtk::Widget>(),
-        reader.next.upcast_ref(),
-        reader.automatic.upcast_ref(),
-        reader.english.upcast_ref(),
-        reader.illustration.upcast_ref(),
+    assert!(
+        window.width() > 0
+            && window.height() > 0
+            && window.width() <= 900
+            && window.height() <= 600,
+        "Story window size invalid or exceeded 900×600: {}×{}",
+        window.width(),
+        window.height()
+    );
+    for (name, widget) in [
+        ("entry", reader.entry.upcast_ref::<gtk::Widget>()),
+        ("skip", reader.skip.upcast_ref()),
+        ("next", reader.next.upcast_ref()),
+        ("automatic", reader.automatic.upcast_ref()),
+        ("pause_sentences", reader.pause_sentences.upcast_ref()),
+        ("english", reader.english.upcast_ref()),
+        ("illustration", reader.illustration.upcast_ref()),
     ] {
         let bounds = widget.compute_bounds(&window).unwrap();
-        assert!(bounds.y() >= 0.0 && bounds.y() + bounds.height() <= window.height() as f32);
+        assert!(
+            bounds.y() >= 0.0 && bounds.y() + bounds.height() <= window.height() as f32,
+            "Widget {name} out of bounds: {bounds:?} in {}×{}",
+            window.width(),
+            window.height()
+        );
     }
     assert!(!reader.transcript.text().contains("It is Saturday"));
     reader.english.set_active(true);
     assert!(reader.transcript.text().contains("It is Saturday"));
     reader.english.set_active(false);
+    let window_keys = (0..window.observe_controllers().n_items())
+        .filter_map(|index| window.observe_controllers().item(index))
+        .filter_map(|controller| controller.downcast::<gtk::EventControllerKey>().ok())
+        .find(|controller| controller.propagation_phase() == gtk::PropagationPhase::Capture)
+        .unwrap();
+    let wait_until_paused = |reader: &Reader| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !reader.speech.is_paused() {
+            assert!(
+                Instant::now() < deadline,
+                "Story speech did not pause: {}",
+                reader.status.text()
+            );
+            context.iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
     reader.speak();
     assert!(!reader.entry.is_sensitive());
+    assert!(reader.skip.is_sensitive());
+    wait_until_paused(&reader);
+    assert!(reader.status.text().contains("Paused after sentence"));
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::space,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(reader.status.text().contains("Det är lördag."));
+    wait_until_paused(&reader);
+    assert!(reader.status.text().contains("Paused after sentence"));
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::Left,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(!reader.speech.is_paused());
+    wait_until_paused(&reader);
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::space,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(!reader.speech.is_paused());
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::space,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(reader.speech.is_paused());
+    assert!(reader.status.text().starts_with("Paused ·"));
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::space,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(!reader.speech.is_paused());
+    wait_until_paused(&reader);
+    reader.pause_sentences.set_active(false);
+    assert!(!reader.speech.is_paused());
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut voices = HashSet::new();
     let mut highlighted = false;
@@ -562,6 +737,39 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
             && voices.contains("Speech voice: sv-SE-MattiasNeural")
     );
     assert!(reader.entry.is_sensitive());
+    assert!(!window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::space,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    reader.entry.set_text("hej");
+    assert!(!window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::Left,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    reader.entry.set_text("");
+    assert!(window_keys.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk::gdk::Key::Left,
+            &0_u32,
+            &gtk::gdk::ModifierType::empty()
+        ],
+    ));
+    assert!(reader.speaking.get());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while reader.speaking.get() {
+        assert!(Instant::now() < deadline, "{}", reader.status.text());
+        context.iteration(false);
+        std::thread::sleep(Duration::from_millis(5));
+    }
     reader.entry.set_text("0");
     reader.entry.emit_activate();
     assert!(reader.status.text().contains("Enter 1"));
@@ -594,6 +802,8 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
     reader.entry.emit_activate();
     reader.next.emit_clicked();
     assert_eq!(reader.book.borrow().page().id, "home-keys");
+    reader.skip.emit_clicked();
+    assert_eq!(reader.book.borrow().page().id, "home-plan");
     reader.automatic.set_active(true);
     assert!(
         !reader.speaking.get(),

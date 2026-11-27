@@ -1809,15 +1809,36 @@ impl Book {
         if let Some(selected) = self.selected.take()
             && let Some(next) = self.page().choices[selected].next
         {
-            if next == "done" {
-                self.finished = true;
-            } else {
-                self.current = self
-                    .pages
-                    .iter()
-                    .position(|page| page.id == next)
-                    .expect("Story links are validated by tests");
-            }
+            self.follow(next);
+        }
+    }
+
+    pub fn skip(&mut self) -> bool {
+        if self.finished {
+            return false;
+        }
+        if let Some(selected) = self.selected.take()
+            && let Some(next) = self.page().choices[selected].next
+        {
+            self.follow(next);
+            return true;
+        }
+        if let Some(next) = self.page().choices.iter().find_map(|choice| choice.next) {
+            self.follow(next);
+            return true;
+        }
+        false
+    }
+
+    fn follow(&mut self, next: &str) {
+        if next == "done" {
+            self.finished = true;
+        } else {
+            self.current = self
+                .pages
+                .iter()
+                .position(|page| page.id == next)
+                .expect("Story links are validated by tests");
         }
     }
 }
@@ -1945,5 +1966,32 @@ mod tests {
         assert_eq!(Actor::Husband.voice(), Voice::Mattias);
         assert_eq!(Actor::Police.voice(), Voice::Sofie);
         assert_eq!(Actor::Conductor.voice(), Voice::Mattias);
+    }
+
+    #[test]
+    fn skipping_advances_unanswered_and_wrong_pages_until_the_book_finishes() {
+        let mut book = Book::default();
+        assert_eq!(book.page().id, "home-weather");
+        assert!(book.skip());
+        assert_eq!(book.page().id, "home-keys");
+        assert!(book.selected.is_none());
+        let wrong = book
+            .page()
+            .choices
+            .iter()
+            .position(|choice| choice.next.is_none())
+            .unwrap();
+        book.answer(&(wrong + 1).to_string()).unwrap();
+        assert!(book.selected.is_some());
+        assert!(book.skip());
+        assert_eq!(book.page().id, "home-plan");
+        assert!(book.selected.is_none());
+        for _ in 0..book.pages.len() {
+            if !book.skip() {
+                break;
+            }
+        }
+        assert!(book.finished);
+        assert!(!book.skip());
     }
 }

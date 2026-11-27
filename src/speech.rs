@@ -21,17 +21,28 @@ const VOICES: &[&str] = &["sv_SE-nst-medium", "sv_SE-alma-medium"];
 const AZURE_VOICE: &str = "azure-sv-SE-SofieNeural";
 const ADVENTURE_BANK: &str = "azure-adventure";
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct WordTiming {
     word: String,
     start_us: i64,
     end_us: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct Timing {
     duration_us: i64,
     words: Vec<WordTiming>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Sentence {
+    start_us: i64,
+    end_us: i64,
+}
+
+fn ends_sentence(word: &str) -> bool {
+    word.trim_end_matches(['"', '\'', ')', ']', '»', '”', '’'])
+        .ends_with(['.', '!', '?'])
 }
 
 impl Timing {
@@ -69,6 +80,35 @@ impl Timing {
             .iter()
             .position(|word| timestamp >= word.start_us && timestamp < word.end_us)
     }
+
+    fn sentences(&self) -> Vec<Sentence> {
+        if self.words.is_empty() {
+            return vec![Sentence {
+                start_us: 0,
+                end_us: self.duration_us,
+            }];
+        }
+        let mut sentences = Vec::new();
+        let mut start_word = 0;
+        for (index, word) in self.words.iter().enumerate() {
+            let last_word = index + 1 == self.words.len();
+            if last_word || ends_sentence(&word.word) {
+                let start_us = if start_word == 0 {
+                    0
+                } else {
+                    self.words[start_word].start_us
+                };
+                let end_us = if last_word {
+                    self.duration_us
+                } else {
+                    word.end_us
+                };
+                sentences.push(Sentence { start_us, end_us });
+                start_word = index + 1;
+            }
+        }
+        sentences
+    }
 }
 
 pub fn transcript_markup(
@@ -98,16 +138,30 @@ pub fn transcript_markup(
     }).collect::<Vec<_>>().join("\n\n")
 }
 
+#[derive(Clone)]
 struct Clip {
     phrase: Phrase,
+    phrase_index: usize,
     audio: PathBuf,
     timing: Timing,
+    sentences: Vec<Sentence>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PauseState {
+    Playing,
+    Manual,
+    AtSentenceEnd,
+    AtClipEnd,
 }
 
 struct Playback {
     clips: Vec<Clip>,
     phrases: Vec<Phrase>,
     current: usize,
+    sentence: usize,
+    pause_state: PauseState,
+    awaiting_seek_below: Option<(i64, Instant)>,
     media: gst::Pipeline,
     loading_since: Instant,
     highlighted: Option<(usize, usize)>,
@@ -115,6 +169,14 @@ struct Playback {
     transcript: gtk::Label,
     completion: Option<Box<dyn FnOnce(bool)>>,
     reminder: bool,
+}
+
+struct LastSentence {
+    phrases: Vec<Phrase>,
+    clip: Clip,
+    sentence: usize,
+    status: gtk::Label,
+    transcript: gtk::Label,
 }
 
 struct Transcript {
@@ -128,7 +190,9 @@ pub struct Speech {
     timer: RefCell<Option<glib::SourceId>>,
     audio_dirs: Vec<PathBuf>,
     show_english: Cell<bool>,
+    auto_pause: Cell<bool>,
     transcript: RefCell<Option<Transcript>>,
+    last_sentence: RefCell<Option<LastSentence>>,
     story_dir: PathBuf,
     #[cfg(test)]
     muted: bool,
@@ -171,7 +235,9 @@ impl Default for Speech {
             timer: RefCell::new(None),
             audio_dirs: audio_directories(&data_dir()),
             show_english: Cell::new(false),
+            auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
+            last_sentence: RefCell::new(None),
             story_dir: data_dir().join("speech").join(ADVENTURE_BANK),
             #[cfg(test)]
             muted: false,
@@ -646,10 +712,57 @@ impl Speech {
         }
     }
 
-    pub fn stop(&self) {
+    pub fn set_auto_pause(self: &Rc<Self>, enabled: bool) {
+        self.auto_pause.set(enabled);
+        let resume_auto_pause = self.playback.borrow().as_ref().is_some_and(|playback| {
+            matches!(
+                playback.pause_state,
+                PauseState::AtSentenceEnd | PauseState::AtClipEnd
+            )
+        });
+        if !enabled && resume_auto_pause {
+            self.toggle_pause();
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.playback.borrow().is_some()
+    }
+
+    #[cfg(test)]
+    pub fn is_paused(&self) -> bool {
+        self.playback
+            .borrow()
+            .as_ref()
+            .is_some_and(|playback| playback.pause_state != PauseState::Playing)
+    }
+
+    pub fn has_last_sentence(&self) -> bool {
+        self.last_sentence.borrow().is_some()
+    }
+
+    pub fn clear_last_sentence(&self) {
+        self.last_sentence.borrow_mut().take();
+    }
+
+    fn stop_timer(&self) {
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
         }
+    }
+
+    fn start_timer(self: &Rc<Self>) {
+        self.stop_timer();
+        let weak = Rc::downgrade(self);
+        let timer = glib::timeout_add_local(Duration::from_millis(15), move || {
+            weak.upgrade()
+                .map_or(glib::ControlFlow::Break, |speech| speech.tick())
+        });
+        self.timer.replace(Some(timer));
+    }
+
+    pub fn stop(&self) {
+        self.stop_timer();
         let playback = self.playback.borrow_mut().take();
         if let Some(mut playback) = playback {
             if let Err(error) = playback.media.set_state(gst::State::Null) {
@@ -662,7 +775,25 @@ impl Speech {
         }
     }
 
+    fn fail_playback(&self, mut state: std::cell::RefMut<'_, Option<Playback>>, message: &str) {
+        let Some(mut playback) = state.take() else {
+            return;
+        };
+        drop(state);
+        self.stop_timer();
+        let _ = playback.media.set_state(gst::State::Null);
+        Self::report_error(&playback.status, message);
+        self.show_transcript(&playback.phrases, &playback.transcript);
+        if let Some(completion) = playback.completion.take() {
+            completion(false);
+        }
+    }
+
     fn media(&self, path: &Path) -> Result<gst::Pipeline, Box<dyn Error>> {
+        self.media_at(path, 0)
+    }
+
+    fn media_at(&self, path: &Path, start_us: i64) -> Result<gst::Pipeline, Box<dyn Error>> {
         gst::init()?;
         let media = gst::Pipeline::new();
         let source = gst::ElementFactory::make("filesrc")
@@ -686,13 +817,217 @@ impl Speech {
             .build()?;
         media.add_many([&source, &parser, &convert, &resample, &sink])?;
         gst::Element::link_many([&source, &parser, &convert, &resample, &sink])?;
-        if let Err(error) = media.set_state(gst::State::Playing) {
+        let start_result: Result<(), Box<dyn Error>> = if start_us > 0 {
+            (|| {
+                media.set_state(gst::State::Paused)?;
+                let (state_result, _, _) = media.state(gst::ClockTime::from_seconds(2));
+                state_result?;
+                let position = gst::ClockTime::from_useconds(u64::try_from(start_us).unwrap_or(0));
+                media.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, position)?;
+                media.set_state(gst::State::Playing)?;
+                Ok(())
+            })()
+        } else {
+            media
+                .set_state(gst::State::Playing)
+                .map(|_| ())
+                .map_err(Into::into)
+        };
+        if let Err(error) = start_result {
             if let Err(stop_error) = media.set_state(gst::State::Null) {
                 eprintln!("Could not stop failed audio pipeline: {stop_error}");
             }
-            return Err(error.into());
+            return Err(error);
         }
         Ok(media)
+    }
+
+    fn seek_and_play(&self, playback: &mut Playback, start_us: i64) -> Result<(), Box<dyn Error>> {
+        let position = gst::ClockTime::from_useconds(u64::try_from(start_us).unwrap_or(0));
+        let seeked = playback
+            .media
+            .seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, position)
+            .is_ok();
+        if seeked {
+            playback.media.set_state(gst::State::Playing)?;
+        } else {
+            let _ = playback.media.set_state(gst::State::Null);
+            let audio = playback.clips[playback.current].audio.clone();
+            playback.media = self.media_at(&audio, start_us)?;
+        }
+        Ok(())
+    }
+
+    pub fn toggle_pause(self: &Rc<Self>) -> bool {
+        let mut state = self.playback.borrow_mut();
+        let Some(playback) = state.as_mut() else {
+            return false;
+        };
+        match playback.pause_state {
+            PauseState::Playing => {
+                if let Err(error) = playback.media.set_state(gst::State::Paused) {
+                    self.fail_playback(state, &format!("Could not pause audio: {error}"));
+                    return true;
+                }
+                playback.pause_state = PauseState::Manual;
+                playback
+                    .status
+                    .set_label("Paused · Space to resume · ← to repeat");
+                drop(state);
+                self.stop_timer();
+                true
+            }
+            PauseState::Manual => {
+                if let Err(error) = playback.media.set_state(gst::State::Playing) {
+                    self.fail_playback(state, &format!("Could not resume audio: {error}"));
+                    return true;
+                }
+                playback.pause_state = PauseState::Playing;
+                playback.loading_since = Instant::now();
+                playback.status.set_label(&format!(
+                    "Speaking Swedish: {}",
+                    playback.clips[playback.current].phrase.swedish
+                ));
+                drop(state);
+                self.start_timer();
+                true
+            }
+            PauseState::AtSentenceEnd => {
+                playback.sentence += 1;
+                let clip = &playback.clips[playback.current];
+                let sentence = clip.sentences[playback.sentence];
+                let awaiting = (playback.sentence + 1 < clip.sentences.len())
+                    .then(|| (sentence.end_us, Instant::now()));
+                if let Err(error) = self.seek_and_play(playback, sentence.start_us) {
+                    self.fail_playback(state, &format!("Could not resume audio: {error}"));
+                    return true;
+                }
+                playback.pause_state = PauseState::Playing;
+                playback.awaiting_seek_below = awaiting;
+                playback.loading_since = Instant::now();
+                playback.highlighted = None;
+                playback.status.set_label(&format!(
+                    "Speaking Swedish: {}",
+                    playback.clips[playback.current].phrase.swedish
+                ));
+                drop(state);
+                self.start_timer();
+                true
+            }
+            PauseState::AtClipEnd => {
+                playback.current += 1;
+                playback.sentence = 0;
+                let clip = &playback.clips[playback.current];
+                Self::voice_tooltip(&playback.transcript, clip);
+                let next = playback
+                    .media
+                    .set_state(gst::State::Null)
+                    .map_err(|error| -> Box<dyn Error> { error.into() })
+                    .and_then(|_| self.media(&clip.audio));
+                match next {
+                    Ok(media) => playback.media = media,
+                    Err(error) => {
+                        let message = error.to_string();
+                        self.fail_playback(state, &message);
+                        return true;
+                    }
+                }
+                playback.pause_state = PauseState::Playing;
+                playback.awaiting_seek_below = None;
+                playback.loading_since = Instant::now();
+                playback.highlighted = None;
+                self.show_transcript(&playback.phrases, &playback.transcript);
+                playback
+                    .status
+                    .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+                drop(state);
+                self.start_timer();
+                true
+            }
+        }
+    }
+
+    pub fn repeat_sentence(self: &Rc<Self>) -> bool {
+        let mut state = self.playback.borrow_mut();
+        let Some(playback) = state.as_mut() else {
+            return false;
+        };
+        let clip = &playback.clips[playback.current];
+        let sentence = clip.sentences[playback.sentence];
+        let awaiting = (playback.sentence + 1 < clip.sentences.len())
+            .then(|| (sentence.end_us, Instant::now()));
+        let result = if playback.pause_state == PauseState::AtClipEnd {
+            let _ = playback.media.set_state(gst::State::Null);
+            let audio = clip.audio.clone();
+            self.media_at(&audio, sentence.start_us).map(|media| {
+                playback.media = media;
+            })
+        } else {
+            self.seek_and_play(playback, sentence.start_us)
+        };
+        if let Err(error) = result {
+            let message = format!("Could not repeat sentence: {error}");
+            self.fail_playback(state, &message);
+            return true;
+        }
+        let clip = &playback.clips[playback.current];
+        Self::voice_tooltip(&playback.transcript, clip);
+        playback.pause_state = PauseState::Playing;
+        playback.awaiting_seek_below = awaiting;
+        playback.loading_since = Instant::now();
+        playback.highlighted = None;
+        self.show_transcript(&playback.phrases, &playback.transcript);
+        playback
+            .status
+            .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+        drop(state);
+        self.start_timer();
+        true
+    }
+
+    pub fn repeat_last_sentence(self: &Rc<Self>, completion: impl FnOnce(bool) + 'static) -> bool {
+        let Some(last) = self.last_sentence.borrow().as_ref().map(|last| {
+            (
+                last.phrases.clone(),
+                last.clip.clone(),
+                last.sentence,
+                last.status.clone(),
+                last.transcript.clone(),
+            )
+        }) else {
+            return false;
+        };
+        let (phrases, clip, sentence_index, status, transcript) = last;
+        let sentence = clip.sentences[sentence_index];
+        self.stop();
+        self.show_transcript(&phrases, &transcript);
+        let media = match self.media_at(&clip.audio, sentence.start_us) {
+            Ok(media) => media,
+            Err(error) => {
+                Self::report_error(&status, &error.to_string());
+                completion(false);
+                return true;
+            }
+        };
+        Self::voice_tooltip(&transcript, &clip);
+        status.set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+        self.playback.replace(Some(Playback {
+            clips: vec![clip],
+            phrases,
+            current: 0,
+            sentence: sentence_index,
+            pause_state: PauseState::Playing,
+            awaiting_seek_below: None,
+            media,
+            loading_since: Instant::now(),
+            highlighted: None,
+            status,
+            transcript,
+            completion: Some(Box::new(completion)),
+            reminder: false,
+        }));
+        self.start_timer();
+        true
     }
 
     pub fn speak_then(
@@ -721,9 +1056,7 @@ impl Speech {
         }
         let mut playback = state.take().expect("Playback was checked above");
         drop(state);
-        if let Some(timer) = self.timer.borrow_mut().take() {
-            timer.remove();
-        }
+        self.stop_timer();
         if let Err(error) = playback.media.set_state(gst::State::Null) {
             Self::report_error(
                 &playback.status,
@@ -734,14 +1067,19 @@ impl Speech {
             }
             return;
         }
-        let audio_dir = playback.clips[playback.current]
+        let resume_from = if playback.pause_state == PauseState::AtClipEnd {
+            (playback.current + 1).min(playback.clips.len().saturating_sub(1))
+        } else {
+            playback.current
+        };
+        let audio_dir = playback.clips[resume_from]
             .audio
             .parent()
             .expect("Audio clips have a voice directory")
             .to_path_buf();
         let phrases = std::iter::once(phrase)
             .chain(
-                playback.clips[playback.current..]
+                playback.clips[resume_from..]
                     .iter()
                     .map(|clip| clip.phrase.clone()),
             )
@@ -778,7 +1116,8 @@ impl Speech {
         });
         let clips = phrases
             .iter()
-            .map(|phrase| -> Result<Clip, Box<dyn Error>> {
+            .enumerate()
+            .map(|(phrase_index, phrase)| -> Result<Clip, Box<dyn Error>> {
                 let directory = phrase.voice.map_or_else(
                     || audio_dir.clone(),
                     |voice| self.story_dir.join(voice.azure_name()),
@@ -794,10 +1133,13 @@ impl Speech {
                 }
                 let timing =
                     Timing::load(&directory.join(format!("{stem}.json")), &phrase.swedish)?;
+                let sentences = timing.sentences();
                 Ok(Clip {
                     phrase: phrase.clone(),
+                    phrase_index,
                     audio,
                     timing,
+                    sentences,
                 })
             })
             .collect::<Result<Vec<_>, _>>();
@@ -834,6 +1176,9 @@ impl Speech {
             clips,
             phrases,
             current: 0,
+            sentence: 0,
+            pause_state: PauseState::Playing,
+            awaiting_seek_below: None,
             media,
             loading_since: Instant::now(),
             highlighted: None,
@@ -842,12 +1187,7 @@ impl Speech {
             completion,
             reminder: false,
         }));
-        let weak = Rc::downgrade(self);
-        let timer = glib::timeout_add_local(Duration::from_millis(25), move || {
-            weak.upgrade()
-                .map_or(glib::ControlFlow::Break, |speech| speech.tick())
-        });
-        self.timer.replace(Some(timer));
+        self.start_timer();
     }
 
     fn tick(&self) -> glib::ControlFlow {
@@ -856,6 +1196,10 @@ impl Speech {
             self.timer.borrow_mut().take();
             return glib::ControlFlow::Break;
         };
+        if playback.pause_state != PauseState::Playing {
+            self.timer.borrow_mut().take();
+            return glib::ControlFlow::Break;
+        }
         let message = playback
             .media
             .bus()
@@ -879,52 +1223,127 @@ impl Speech {
         if let Some(message) = failure {
             Self::report_error(&playback.status, &message);
         } else if ended {
-            playback.current += 1;
-            if let Some(clip) = playback.clips.get(playback.current) {
-                Self::voice_tooltip(&playback.transcript, clip);
-                let next = playback
-                    .media
-                    .set_state(gst::State::Null)
-                    .map_err(|error| -> Box<dyn Error> { error.into() })
-                    .and_then(|_| self.media(&clip.audio));
-                match next {
-                    Ok(media) => playback.media = media,
-                    Err(error) => {
-                        Self::report_error(&playback.status, &error.to_string());
+            let last_sentence = playback.clips[playback.current]
+                .sentences
+                .len()
+                .saturating_sub(1);
+            playback.sentence = last_sentence;
+            if playback.current + 1 < playback.clips.len() {
+                if self.auto_pause.get() && !(playback.reminder && playback.current == 0) {
+                    if let Err(error) = playback.media.set_state(gst::State::Null) {
+                        Self::report_error(
+                            &playback.status,
+                            &format!("Could not pause audio: {error}"),
+                        );
+                    } else {
+                        playback.pause_state = PauseState::AtClipEnd;
+                        playback.awaiting_seek_below = None;
+                        playback.highlighted = None;
                         self.show_transcript(&playback.phrases, &playback.transcript);
-                        let completion = playback.completion.take();
-                        state.take();
-                        drop(state);
+                        playback
+                            .status
+                            .set_label("Paused after sentence · Space to continue · ← to repeat");
                         self.timer.borrow_mut().take();
-                        if let Some(completion) = completion {
-                            completion(false);
-                        }
                         return glib::ControlFlow::Break;
                     }
+                } else {
+                    playback.current += 1;
+                    playback.sentence = 0;
+                    let clip = &playback.clips[playback.current];
+                    Self::voice_tooltip(&playback.transcript, clip);
+                    let next = playback
+                        .media
+                        .set_state(gst::State::Null)
+                        .map_err(|error| -> Box<dyn Error> { error.into() })
+                        .and_then(|_| self.media(&clip.audio));
+                    match next {
+                        Ok(media) => playback.media = media,
+                        Err(error) => {
+                            Self::report_error(&playback.status, &error.to_string());
+                            self.show_transcript(&playback.phrases, &playback.transcript);
+                            let completion = playback.completion.take();
+                            state.take();
+                            drop(state);
+                            self.timer.borrow_mut().take();
+                            if let Some(completion) = completion {
+                                completion(false);
+                            }
+                            return glib::ControlFlow::Break;
+                        }
+                    }
+                    playback.awaiting_seek_below = None;
+                    playback.loading_since = Instant::now();
+                    playback.highlighted = None;
+                    self.show_transcript(&playback.phrases, &playback.transcript);
+                    playback
+                        .status
+                        .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+                    return glib::ControlFlow::Continue;
                 }
-                playback.loading_since = Instant::now();
-                playback.highlighted = None;
-                self.show_transcript(&playback.phrases, &playback.transcript);
+            } else {
+                let last_clip = playback.clips[playback.current].clone();
+                self.last_sentence.replace(Some(LastSentence {
+                    phrases: playback.phrases.clone(),
+                    clip: last_clip,
+                    sentence: last_sentence,
+                    status: playback.status.clone(),
+                    transcript: playback.transcript.clone(),
+                }));
                 playback
                     .status
-                    .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
-                return glib::ControlFlow::Continue;
+                    .set_label("Swedish speech ready · Replay to hear the prompt again");
+                completed = true;
             }
-            playback
-                .status
-                .set_label("Swedish speech ready · Replay to hear the prompt again");
-            completed = true;
         } else {
-            let highlighted = timestamp
-                .and_then(|position| {
-                    playback.clips[playback.current].timing.word_at(
-                        i64::try_from(position.useconds()).expect("Speech duration fits i64"),
-                    )
-                })
-                .map(|word| (playback.current, word));
-            if playback.highlighted != highlighted {
-                self.render_transcript(&playback.phrases, &playback.transcript, highlighted);
-                playback.highlighted = highlighted;
+            if let Some(position) = timestamp {
+                let pos_us = i64::try_from(position.useconds()).expect("Speech duration fits i64");
+                let mut ignore_boundary = false;
+                if let Some((limit, since)) = playback.awaiting_seek_below {
+                    if pos_us < limit || since.elapsed() > Duration::from_millis(250) {
+                        playback.awaiting_seek_below = None;
+                    } else {
+                        ignore_boundary = true;
+                    }
+                }
+                let clip = &playback.clips[playback.current];
+                if !ignore_boundary && playback.sentence + 1 < clip.sentences.len() {
+                    if self.auto_pause.get() {
+                        if pos_us >= clip.sentences[playback.sentence].end_us {
+                            if let Err(error) = playback.media.set_state(gst::State::Paused) {
+                                Self::report_error(
+                                    &playback.status,
+                                    &format!("Could not pause audio: {error}"),
+                                );
+                            } else {
+                                playback.pause_state = PauseState::AtSentenceEnd;
+                                playback.highlighted = None;
+                                self.show_transcript(&playback.phrases, &playback.transcript);
+                                playback.status.set_label(
+                                    "Paused after sentence · Space to continue · ← to repeat",
+                                );
+                                self.timer.borrow_mut().take();
+                                return glib::ControlFlow::Break;
+                            }
+                        }
+                    } else {
+                        while playback.sentence + 1 < clip.sentences.len()
+                            && pos_us >= clip.sentences[playback.sentence + 1].start_us
+                        {
+                            playback.sentence += 1;
+                        }
+                    }
+                }
+                let highlighted = if ignore_boundary {
+                    None
+                } else {
+                    clip.timing
+                        .word_at(pos_us)
+                        .map(|word| (clip.phrase_index, word))
+                };
+                if playback.highlighted != highlighted {
+                    self.render_transcript(&playback.phrases, &playback.transcript, highlighted);
+                    playback.highlighted = highlighted;
+                }
             }
             return glib::ControlFlow::Continue;
         }
@@ -980,7 +1399,9 @@ impl Speech {
             timer: RefCell::new(None),
             audio_dirs,
             show_english: Cell::new(false),
+            auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
+            last_sentence: RefCell::new(None),
             story_dir: data_dir().join("speech").join(ADVENTURE_BANK),
             muted,
         }
@@ -1186,5 +1607,54 @@ mod tests {
         assert!(!swedish_only.contains("Good job!"));
         assert!(!swedish_only.contains("Less"));
         assert!(swedish_only.contains("weight=\"bold\">Bra</span> jobbat!"));
+    }
+
+    #[test]
+    fn sentence_splitting_uses_terminal_punctuation_and_clip_end() {
+        let timing = Timing {
+            duration_us: 1_500_000,
+            words: vec![
+                WordTiming {
+                    word: "Det".into(),
+                    start_us: 50_000,
+                    end_us: 200_000,
+                },
+                WordTiming {
+                    word: "regnar!".into(),
+                    start_us: 220_000,
+                    end_us: 500_000,
+                },
+                WordTiming {
+                    word: "Går".into(),
+                    start_us: 700_000,
+                    end_us: 900_000,
+                },
+                WordTiming {
+                    word: "vi?".into(),
+                    start_us: 950_000,
+                    end_us: 1_300_000,
+                },
+            ],
+        };
+        assert_eq!(
+            timing.sentences(),
+            vec![
+                Sentence {
+                    start_us: 0,
+                    end_us: 500_000,
+                },
+                Sentence {
+                    start_us: 700_000,
+                    end_us: 1_500_000,
+                },
+            ]
+        );
+        assert_eq!(
+            timings().sentences(),
+            vec![Sentence {
+                start_us: 0,
+                end_us: 1_000_000,
+            }]
+        );
     }
 }
