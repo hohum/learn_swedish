@@ -1,0 +1,124 @@
+city-realise
+n|En kvinna sa att spårvagnen strax skulle gå. Du trodde att hon sa att vi skulle gå.|A woman said that tram-the shortly would go. You thought that she said that we would walk.|A woman said the tram was about to leave. You thought she meant we should walk.
+Först efteråt gick det upp för mig vad hon menade.|Only afterwards went it up for me what she meant.|I didn't realize what she meant until later.
+Gick kan alltså handla om både fötter och insikter.|Went can therefore be about both feet and insights.|So gick can describe both walking and figuring something out.
+
+city-tram
+street|Vet du åt vilket håll spårvagnen går? Jag ska mot centrum.|Know you toward which direction tram-the goes? I shall toward centre.|Do you know which direction the tram goes? I'm heading towards the centre.
+Titta på skylten på andra sidan hållplatsen.|Look at sign-the on other side-the of stop-place-the.|Check the sign on the other side of the stop.
+Samma plats kan ha två helt olika riktningar.|Same place can have two completely different directions.|The same place can send you two very different ways.
+
+city-flower
+shop|Vill du ha buketten inslagen eller ska du bära den som den är?|Want you have bouquet-the wrapped or shall you carry it as it is?|Would you like the bouquet wrapped, or will you carry it as it is?
+Slå gärna in den. Vi ska åka tåg.|Wrap gladly in it. We shall travel by train.|Could you wrap it, please? We're taking the train.
+Smart. Buketten slipper få sitt hår rufsigt.|Smart. Bouquet-the escapes getting its hair ruffled.|Smart. That'll keep the bouquet from getting its hair messed up.
+
+city-street-name
+w|På skylten står det Norra Hamngatan. Vi letar efter den södra.|On sign-the stands it North Harbour-street-the. We look for the southern one.|The sign says North Harbour Street. We want the south one.
+Då går vi över bron till andra sidan.|Then go we over bridge-the to other side-the.|Then let's cross the bridge to the other side.
+Bra. Norr och söder är oväntat praktiska ord.|Good. North and south are unexpectedly practical words.|Good. North and south turn out to be useful words.
+
+city-accordion
+n|På torget spelar någon dragspel. Fodralet ligger öppet framför honom.|In square-the plays someone pull-instrument. Case-the lies open in front of him.|Someone is playing the accordion in the square. His case is open in front of him.
+Ska vi stanna till och lyssna en stund?|Shall we stop to and listen a while?|Shall we stop and listen for a bit?
+Gärna. Det här var inte med i resplanen.|Gladly. This here was not along in journey-plan-the.|Yes, please. This wasn't on the itinerary.
+
+city-bakery
+shop|Surdegsbrödet kom precis ur ugnen. Vill du ha en halv limpa?|Sourdough-bread-the came just out of oven-the. Want you have half a loaf?|The sourdough just came out of the oven. Would you like half a loaf?
+Gärna, om du kan skiva den också.|Gladly, if you can slice it too.|Yes, please, if you can slice it as well.
+Det luktar som ett mycket bra beslut.|It smells like a very good decision.|That smells like an excellent decision.
+
+city-library
+w|På biblioteksskylten står det återlämning även när biblioteket är stängt.|On library-sign-the stands it return even when library-the is closed.|The library sign says you can return books even when it's closed.
+Då måste de ha ett bokinkast.|Then must they have a book-slot.|They must have a book drop, then.
+Som en brevlåda för böcker som varit på vift.|Like a letter-box for books that been on the loose.|Like a letterbox for books that have been out and about.
+
+city-secondhand
+shop|Jackan är begagnad, men dragkedjan är bytt.|Jacket-the is used, but zip-the is changed.|The jacket is second-hand, but the zip has been replaced.
+Går det bra att prova den?|Goes it fine to try it?|Can I try it on?
+Ja. Den kan redan konsten att hänga med.|Yes. It knows already art-the of hanging along.|Yes. It already knows how to keep up.
+
+city-markethall
+w|Här säljer de ost över disk. Du kan be om ett smakprov.|Here sell they cheese over counter. You can ask for a taste-sample.|They sell cheese at the counter here. You can ask for a sample.
+Får jag smaka på den lagrade osten?|May I taste on the aged cheese-the?|May I try the aged cheese?
+Snyggt. Ett smakprov kräver ingen hel ost.|Nicely. A taste-sample demands no whole cheese.|Nicely done. A sample doesn't commit you to a whole cheese.
+
+city-canal
+w|Titta, båten fäller ner taket för att komma under bron.|Look, boat-the folds down roof-the to come under bridge-the.|Look, the boat lowers its roof to get under the bridge.
+Den får nästan ducka på vägen.|It gets almost duck on way-the.|It almost has to duck as it goes through.
+Det är inte bara vi som måste anpassa oss.|It is not only we who must adapt ourselves.|We're not the only ones who have to adapt.
+
+city-photos
+street|Vill ni att jag tar en bild på er med kanalen i bakgrunden?|Want you [plural] that I take a picture on you [plural] with canal-the in back-ground-the?|Would you like me to take your photo with the canal behind you?
+Ja tack. Håll gärna mobilen på högkant.|Yes please. Hold gladly phone-the on high-edge.|Yes, please. Could you hold the phone vertically?
+Perfekt. Vi kom med båda två.|Perfect. We came along both two.|Perfect. We both made it into the shot.
+
+city-cinnamon
+cafe|Vi har kardemummabullar kvar om ni vill ha något med er.|We have cardamom-buns left if you [plural] want have something with you.|We've got cardamom buns left if you'd like something to take with you.
+Två att ta med, tack.|Two to take along, please.|Two to take away, please.
+Ingen sa att en lördag bara får ha en fika.|No one said that a Saturday only gets have one fika.|Nobody said Saturday could only have one fika.
+
+city-bookseller
+shop|Den här boken har korta kapitel. Den andra har lättare ord.|This here book-the has short chapters. The other has easier words.|This book has short chapters. The other one uses easier words.
+Jag börjar gärna med den som har lättare ord.|I begin gladly with the one that has easier words.|I'd like to start with the one with easier words.
+Bra. Boken behöver inte vara ett hinderlopp.|Good. Book-the needs not be an obstacle-race.|Good. Reading it doesn't need to be an obstacle course.
+
+city-crossing
+n|En spårvagn plingar fast gatan bredvid ser tom ut.|A tram rings though street-the beside looks empty out.|A tram rings its bell even though the street beside it looks empty.
+Vi väntar tills spårvagnen har åkt förbi.|We wait until tram-the has travelled past.|We'll wait for the tram to pass.
+Spårvagnar gillar en tydlig entré.|Trams like a clear entrance.|Trams like to announce themselves.
+
+city-museum
+shop|Museet stänger snart. Kan ni komma tillbaka en annan dag?|Museum-the closes soon. Can you [plural] come back another day?|The museum closes soon. Can you come back another day?
+Ja, vi kan komma tillbaka nästa lördag.|Yes, we can come back next Saturday.|Yes, we can come back next Saturday.
+Bra. Konsten håller sig nog kvar.|Good. Art-the keeps itself probably remaining.|Good. The art will probably still be here.
+
+city-poster
+n|På en affisch står det fri entré, men bara före klockan två.|On a poster stands it free entrance, but only before clock-the two.|A poster says admission is free, but only before two o'clock.
+Då är det för sent för gratis inträde i dag.|Then is it too late for free admission today.|Then we're too late for free admission today.
+Men vi kan läsa affischen gratis hur länge vi vill.|But we can read poster-the for free how long we want.|But we can read the poster for free as long as we like.
+
+city-windy
+w|På den här gatan blåser det rakt igenom jackan.|On this here street-the blows it straight through jacket-the.|The wind goes straight through my jacket on this street.
+Vi går ett kvarter in från vattnet.|We go one block in from water-the.|Let's move a block inland.
+Bra. Jag vill kunna höra mina egna tankar.|Good. I want be able to hear my own thoughts.|Good. I'd like to hear my own thoughts.
+
+city-construction
+n|Halva trottoaren är avspärrad, men det finns en gångväg runt bygget.|Half pavement-the is cordoned-off, but there exists a walking-way around construction-site-the.|Half the pavement is cordoned off, but there's a walkway around the works.
+Vi följer pilarna runt avspärrningen.|We follow arrows-the around cordon-the.|Let's follow the arrows around the barrier.
+Staden har möblerat om medan vi fikade.|City-the has furnished again while we had fika.|The city rearranged the furniture while we had fika.
+
+city-cobblestone
+w|Gatstenarna är hala. Ta min arm om du vill.|Street-stones-the are slippery. Take my arm if you want.|The cobblestones are slippery. Take my arm if you like.
+Tack, jag går lite långsammare här.|Thanks, I go a little more slowly here.|Thanks. I'll walk a little slower here.
+Vi går i takt med stenen, inte med klockan.|We walk in step with stone-the, not with clock-the.|We'll keep time with the cobbles, not the clock.
+
+city-address
+street|Ursäkta, var ligger nummer trettiosju? Jag ser bara jämna nummer.|Excuse [me], where lies number thirty-seven? I see only even numbers.|Excuse me, where's number thirty-seven? I can only see even numbers.
+De udda numren är nog på andra sidan gatan.|The odd numbers-the are probably on other side-the of street-the.|The odd numbers are probably across the street.
+Bra. Udda betyder inte alltid konstig.|Good. Odd means not always strange.|Good. Udda doesn't always mean strange.
+
+city-water
+cafe|Vattenkaraffen står vid disken. Det finns rena glas bredvid.|Water-jug-the stands by counter-the. There exist clean glasses beside.|The water jug is by the counter. There are clean glasses beside it.
+Jag hämtar varsitt glas vatten åt oss.|I fetch one-each glass water for us.|I'll get us both a glass of water.
+Bra. Efter kaffet behövs något som inte vill hålla oss vakna.|Good. After coffee-the is needed something that not wants keep us awake.|Good. After coffee we need something that doesn't want to keep us awake.
+
+city-change
+shop|Här är dina varor. Vill du ha de sista fem kronorna i mynt?|Here are your goods. Want you have the last five kronor-the in coins?|Here are your things. Would you like the last five kronor in coins?
+Ja tack, lägg dem gärna här på disken.|Yes please, lay them gladly here on counter-the.|Yes, please. Could you put them here on the counter?
+De får följa med hem som stadens minsta souvenir.|They get come along home as city-the’s smallest souvenir.|They can come home as the city's smallest souvenir.
+
+city-window
+n|I skyltfönstret står en porslinsälg med en pytteliten halsduk.|In shop-window-the stands a porcelain-moose with a teeny-tiny scarf.|A porcelain moose wearing a tiny scarf stands in the shop window.
+Den ser bättre klädd ut än jag.|It looks better dressed out than I.|It looks better dressed than I do.
+Och den slipper gå ut i regnet.|And it escapes going out in rain-the.|And it doesn't have to go out in the rain.
+
+city-directions
+street|Hur kommer man till centralstationen härifrån?|How comes one to central-station-the from-here?|How do you get to the central station from here?
+Gå rakt fram tills du ser stationsklockan.|Go straight ahead until you see station-clock-the.|Go straight ahead until you see the station clock.
+Och nu är du tydligen den som folk frågar.|And now are you apparently the one who people ask.|And now you're apparently the one people ask.
+
+city-bench-busker
+w|Det är fullt på bänken men vi hör musiken härifrån också.|It is full on bench-the but we hear music-the from-here too.|The bench is full, but we can hear the music from here too.
+Vi står här tills låten är slut.|We stand here until song-the is at an end.|Let's stand here till the song ends.
+Gärna. Tåget får vänta i våra tankar i alla fall.|Gladly. Train-the gets wait in our thoughts in any case.|Gladly. The train can wait in our minds, at least.

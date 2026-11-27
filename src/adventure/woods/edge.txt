@@ -1,0 +1,124 @@
+woods-map
+n|På kartan står du här, men kartan sitter upp och ner.|On map-the stands you are here, but map-the sits up and down.|The map says You are here, but someone hung it upside down.
+Vi får vända på kartan i huvudet.|We get turn on map-the in head-the.|We'll have to turn the map around in our heads.
+För en gångs skull är det kartan som gått vilse.|For one time’s sake is it map-the that gone astray.|For once it's the map that's got lost.
+
+woods-gate-latch
+walk|Kan ni hålla upp grinden? Jag har händerna fulla.|Can you [plural] hold up gate-the? I have hands-the full.|Could you hold the gate? My hands are full.
+Självklart. Jag håller den åt dig.|Of course. I hold it for you.|Of course. I'll hold it for you.
+Grindvakt i ungefär fyra sekunder.|Gate-guard for roughly four seconds.|Gatekeeper for about four seconds.
+
+woods-binoculars
+w|Kikaren ligger i ytterfacket på ryggsäcken. Kan du räcka mig den?|Binoculars-the lie in outer-compartment-the on backpack-the. Can you pass me them?|The binoculars are in the outside pocket. Could you pass them to me?
+Varsågod, här är kikaren.|There-you-go, here are binoculars-the.|Here you go. Here are the binoculars.
+Nu kan jag se vad jag letar efter.|Now can I see what I look for.|Now I can see what I'm looking for.
+
+woods-runners
+walk|Ursäkta, kan vi komma förbi på vänster sida?|Excuse [me], can we come past on left side?|Excuse me, can we get past on the left?
+Javisst, vi håller till höger.|Yes of course, we keep to right.|Of course. We'll keep to the right.
+Så där. Inget omkörningsdrama här.|Like that there. No overtaking-drama here.|There we go. No overtaking drama here.
+
+woods-glove
+n|På ett staket hänger en ensam vante. Den är alldeles torr.|On a fence hangs a lone mitten. It is completely dry.|A lone mitten is hanging on a fence. It's completely dry.
+Någon kanske kommer tillbaka efter den.|Someone maybe comes back for it.|Someone might come back for it.
+Låt den hänga. Den har bästa utsikten.|Let it hang. It has best view-the.|Leave it there. It's got the best view.
+
+woods-fork-photo
+w|Ta gärna en bild av skylten vid vägskälet. Då hittar vi tillbaka.|Take gladly a picture of sign-the by road-fork-the. Then find we back.|Could you photograph the sign at the fork? It'll help us find our way back.
+Jag tar en bild innan vi fortsätter.|I take a picture before we continue.|I'll take a picture before we carry on.
+Äntligen en semesterbild med ett syfte.|Finally a holiday-picture with a purpose.|Finally, a holiday photo with a purpose.
+
+woods-woodpecker
+n|Från en tall hörs ett snabbt knackande.|From a pine is heard a quick knocking.|There's a rapid tapping from a pine tree.
+Är det en hackspett som knackar?|Is it a woodpecker that knocks?|Is that a woodpecker tapping?
+Det låter som en som har bråttom.|It sounds like one that has hurry.|It sounds like one in a hurry.
+
+woods-bike-bell
+n|Bakom er plingar en cyklist med ringklockan.|Behind you [plural] rings a cyclist with bell-the.|A cyclist rings their bell behind you.
+Vi kliver åt sidan och släpper förbi cyklisten.|We step to side-the and let past cyclist-the.|Let's step aside and let the cyclist pass.
+Ett pling och en hel konversation.|One ring and a whole conversation.|One ring and a whole conversation.
+
+woods-shoelace
+w|Ditt ena skosnöre har gått upp.|Your one shoe-lace has gone up.|One of your shoelaces has come undone.
+Vänta lite. Jag knyter om det.|Wait a little. I tie again it.|Hang on. I'll tie it again.
+Bra. Stigen har tillräckligt med fällor ändå.|Good. Path-the has enough of traps anyway.|Good. The path has enough traps already.
+
+woods-lost-and-found
+dog|Har ni sett ett rött hundkoppel? Jag tror att jag tappade det här.|Have you [plural] seen a red dog-leash? I think that I dropped it here.|Have you seen a red lead? I think I dropped it around here.
+Tyvärr, men vi håller utkik.|Unfortunately, but we keep lookout.|I'm afraid not, but we'll keep an eye out.
+Nu spanar vi båda efter något rött.|Now look we both for something red.|Now we're both on the lookout for something red.
+
+woods-birdsong
+w|Hör du fågeln? Vänta lite så får du höra den igen.|Hear you bird-the? Wait a little so get you hear it again.|Hear that bird? Wait a second and you'll hear it again.
+Nu hör jag den. Den låter som en visselpipa.|Now hear I it. It sounds like a whistle-pipe.|Now I hear it. It sounds like a whistle.
+Ja, fast skogen har ingen domare.|Yes, though forest-the has no referee.|Yes, although the woods have no referee.
+
+woods-wet-bench
+w|Bänken är ledig, men den är blöt.|Bench-the is free, but it is wet.|The bench is free, but it's wet.
+Vi står upp en stund i stället.|We stand up a while instead.|Let's stand for a bit instead.
+Bra. Jag vill helst inte ha en kall överraskning.|Good. I want preferably not have a cold surprise.|Good. I'd rather avoid a cold surprise.
+
+woods-quiet
+walk|Kan ni prata lite tystare? Jag försöker höra en uggla.|Can you [plural] talk a little more quietly? I try hear an owl.|Could you speak a bit more quietly? I'm trying to hear an owl.
+Absolut. Vi ska vara tysta.|Absolutely. We shall be quiet.|Of course. We'll be quiet.
+Nu övar vi på den tysta delen av svenskan.|Now practise we on the quiet part-the of Swedish-the.|Now we're practising the quiet part of Swedish.
+
+woods-trail-mark
+w|Märket på stenen är blått. Vi ska följa de gula märkena.|Mark-the on stone-the is blue. We shall follow the yellow marks-the.|The mark on the rock is blue. We're following the yellow markers.
+Då letar vi efter nästa gula märke.|Then look we for next yellow mark.|Let's look for the next yellow marker, then.
+Här är färgerna viktigare än på strumporna.|Here are colours-the more important than on socks-the.|Colours matter more here than they do on our socks.
+
+woods-windbreak
+n|En skylt med vindskydd pekar åt vänster.|A sign with wind-shelter points to left.|A sign points left to a shelter.
+Vi kan ta skydd där om det börjar blåsa.|We can take shelter there if it begins blow.|We can shelter there if the wind picks up.
+Skogen har alltså ett väntrum.|Forest-the has therefore a waiting-room.|So the woods have a waiting room.
+
+woods-squeaky-boot
+w|Det gnisslar varje gång du tar ett steg.|It squeaks every time you take a step.|There's a squeak every time you take a step.
+Det är nog min sko som låter.|It is probably my shoe that makes-sound.|It's probably my shoe making that noise.
+Den får gå med i fågelkören.|It gets go along in bird-choir-the.|It can join the birds' choir.
+
+woods-stroller
+walk|Vet ni om stigen är framkomlig med barnvagn?|Know you [plural] if path-the is passable with child-carriage?|Do you know whether you can get a pushchair through?
+Det vet vi faktiskt inte. Vi kom just hit.|That know we actually not. We came just here.|We don't actually know. We just got here.
+Det går utmärkt att säga att man inte vet.|It goes excellently to say that one not knows.|It's perfectly fine to say you don't know.
+
+woods-sign-post
+w|Här står det att hundar ska hållas kopplade.|Here stands it that dogs shall be kept leashed.|This says dogs must be kept on a lead.
+Så hundarna ska ha koppel här.|So dogs-the shall have leash here.|So dogs need to be on a lead here.
+Precis. Det gäller även väldigt trevliga hundar.|Exactly. It applies even very nice dogs.|Exactly. That goes for very nice dogs too.
+
+woods-puddles
+n|En lång vattenpöl täcker hela stigen. Vid sidan finns torr mark.|A long water-puddle covers whole path-the. By side-the exists dry ground.|A long puddle covers the whole path. There's dry ground to the side.
+Vi tar oss runt pölen på den torra sidan.|We take ourselves around puddle-the on the dry side-the.|Let's go around the puddle on the dry side.
+Synd. Mina skor ville tydligen bada.|A shame. My shoes wanted apparently swim.|Shame. Apparently my shoes wanted a swim.
+
+woods-slow
+w|Jag vill gå långsammare i uppförsbacken.|I want walk more slowly in up-hill-the.|I'd like to slow down on the uphill bit.
+Visst, vi har ingen brådska.|Sure, we have no hurry.|Of course. We're in no rush.
+Bra. Backen försvinner inte för det.|Good. Hill-the disappears not for that.|Good. The hill won't disappear on us.
+
+woods-gravel
+walk|Det är lösgrus vid kröken. Ta det lite lugnt där.|It is loose-gravel by bend-the. Take it a little calmly there.|There's loose gravel at the bend. Take it easy there.
+Tack för varningen. Vi går försiktigt.|Thanks for warning-the. We walk carefully.|Thanks for the warning. We'll be careful.
+Inga stilpoäng för att halka snyggt.|No style-points for slipping stylishly.|No style points for slipping gracefully.
+
+woods-phone-signal
+w|Jag får ingen täckning här. Har du sparat kartan?|I get no coverage here. Have you saved map-the?|I have no signal here. Did you save the map?
+Ja, jag laddade ner den hemma.|Yes, I loaded down it at home.|Yes, I downloaded it at home.
+Äntligen något som fungerar när telefonen inte gör det.|Finally something that works when phone-the not does it.|Finally, something that works when the phone doesn't.
+
+woods-shadow
+n|En ek skuggar nästan hela gläntan.|An oak shades almost whole clearing-the.|An oak shades almost the whole clearing.
+Ska vi stanna till i skuggan en stund?|Shall we stop to in shade-the a while?|Shall we stop in the shade for a bit?
+Gärna. Trädet tar inte betalt.|Gladly. Tree-the takes not payment.|Gladly. The tree doesn't charge.
+
+woods-crunch
+w|Vad var det som knakade under foten?|What was it that cracked under foot-the?|What was that crunch under your foot?
+Jag trampade på en torr kvist.|I stepped on a dry twig.|I stepped on a dry twig.
+En kvist med dramatisk talang.|A twig with dramatic talent.|A twig with a flair for drama.
+
+woods-directions
+walk|Är det här vägen tillbaka till parkeringen?|Is this here way-the back to car-park-the?|Is this the way back to the car park?
+Ja, den ligger bakom oss, vid skogskanten.|Yes, it lies behind us, by forest-edge-the.|Yes. It's behind us, at the edge of the woods.
+Se där. Du låter redan som en lokal guide.|See there. You sound already like a local guide.|Look at that. You already sound like a local guide.

@@ -1,0 +1,124 @@
+ikea-finish
+shop|Hyllan finns i två utföranden: vit och ekmönstrad. Båda är lika breda.|Shelf-the exists in two finishes: white and oak-patterned. Both are equally wide.|The shelf comes in white or oak effect. Both are the same width.
+Vi tar den ekmönstrade, tack.|We take the oak-patterned one, please.|We'll take the oak-effect one, please.
+Lite skog till hallen.|A little forest for hallway-the.|A little bit of forest for the hallway.
+
+ikea-wall
+w|På etiketten står det att hyllan ska fästas i väggen.|On label-the stands it that shelf-the shall be attached in wall-the.|The label says the shelf needs to be secured to the wall.
+Ingår väggfästet i paketet?|Is included wall-bracket-the in package-the?|Does the package include the wall bracket?
+Bra fråga. Vi frågar i stället för att gissa.|Good question. We ask instead of to guess.|Good question. Let's ask instead of guessing.
+
+ikea-door-clearance
+w|Hyllan är grund, men kolla att dörren kan öppnas hela vägen.|Shelf-the is shallow, but check that door-the can be opened whole way-the.|The shelf is shallow, but check that the door can open all the way.
+Vi räknar med plats för dörren också.|We count with space for door-the too.|Let's allow room for the door too.
+Praktiskt. Jag gillar att kunna gå in hemma.|Practical. I like to be able to go in at home.|Practical. I like being able to get inside our home.
+
+ikea-tape
+shop|Vill ni låna ett måttband eller räcker pappersmåttet?|Want you [plural] borrow a measuring-tape or suffices paper-measure-the?|Would you like to borrow a tape measure, or will the paper one do?
+Ett måttband vore toppen, tack.|A measuring-tape would be great, thanks.|A tape measure would be great, thanks.
+Nu kan vi mäta utan att vika papper.|Now can we measure without folding paper.|Now we can measure without folding paper.
+
+ikea-colour
+w|Den grå hyllan ser nästan blå ut i den här belysningen.|The grey shelf-the looks almost blue out in this here lighting-the.|The grey shelf looks almost blue in this lighting.
+Kan vi titta på den i dagsljus?|Can we look at it in daylight?|Can we look at it in daylight?
+Bra. Lamporna har sina egna åsikter.|Good. Lamps-the have their own opinions.|Good. The lights have opinions of their own.
+
+ikea-displayed
+shop|Den här är ett visningsexemplar. Paketet finns på lagret.|This here is a display-copy. Package-the exists at warehouse-the.|This is a display model. The boxed one is in the warehouse.
+Jag skriver upp var paketet finns.|I write up where package-the exists.|I'll write down where to find the box.
+Bra. Vi låter visningshyllan stå kvar.|Good. We let display-shelf-the stand remaining.|Good. We'll leave the display shelf here.
+
+ikea-extra-shelf
+shop|Det går att köpa ett extra hyllplan separat.|It goes to buy an extra shelf-plane separately.|You can buy an extra shelf separately.
+Behöver vi ett hyllplan till, tycker du?|Need we one shelf-plane more, think you?|Do you think we need another shelf?
+Vi väntar tills vi ser hur skorna får plats.|We wait until we see how shoes-the get room.|Let's see how the shoes fit first.
+
+ikea-depth
+w|Prislappen visar bredden först och djupet sedan.|Price-tag-the shows width-the first and depth-the then.|The price tag shows width first and depth second.
+Då är den tjugoåtta centimeter djup.|Then is it twenty-eight centimetres deep.|So it's twenty-eight centimetres deep.
+Precis. En smal hylla kan fortfarande sticka ut.|Exactly. A narrow shelf can still stick out.|Exactly. A narrow shelf can still stick out.
+
+ikea-weight
+shop|Det står maxbelastning per hyllplan här på lappen.|It stands maximum-load per shelf-plane here on tag-the.|The tag shows the maximum load per shelf.
+Då läser vi hur mycket varje hyllplan tål.|Then read we how much each shelf-plane withstands.|Let's check how much weight each shelf can take.
+Vi ställer nog inte stenarna från skogen där.|We put probably not stones-the from forest-the there.|We probably won't put our rocks from the woods there.
+
+ikea-feet
+w|Golvet i hallen lutar lite. Har hyllan ställbara fötter?|Floor-the in hallway-the slopes a little. Has shelf-the adjustable feet?|The hallway floor slopes a bit. Does the shelf have adjustable feet?
+Vi kan fråga om fötterna går att justera.|We can ask if feet-the go to adjust.|We can ask whether the feet are adjustable.
+Hyllan ska helst inte luta lika mycket som huset.|Shelf-the shall preferably not lean equally much as house-the.|I'd rather the shelf didn't lean as much as the house.
+
+ikea-assembly
+shop|Ni hittar monteringsanvisningen på produktsidan.|You [plural] find assembly-instruction-the on product-page-the.|You'll find the assembly instructions on the product page.
+Då kan vi läsa den innan vi öppnar paketet.|Then can we read it before we open package-the.|Then we can read them before we open the box.
+En ovanligt vuxen plan för en lördag.|An unusually adult plan for a Saturday.|An unusually grown-up plan for a Saturday.
+
+ikea-room-number
+w|Hallmöblerna är i rum sex. Skylten med åttan gäller sovrum.|Hallway-furniture-the is in room six. Sign-the with eight-the applies bedroom.|Hall furniture is in room six. The number eight sign is for bedrooms.
+Vi följer skyltarna mot rum sex.|We follow signs-the toward room six.|Let's follow the signs to room six.
+Ingen tupplur bland sängarna i dag.|No nap among beds-the today.|No nap among the beds today.
+
+ikea-arrow
+w|Pilarna leder runt hela avdelningen, men här finns en genväg.|Arrows-the lead around whole department-the, but here exists a shortcut.|The arrows go all round the department, but there's a shortcut here.
+Vi tar genvägen till nästa avdelning.|We take shortcut-the to next department.|Let's take the shortcut to the next department.
+Vi kom för hyllan. Vi behöver inte vinna orienteringen.|We came for shelf-the. We need not win orienteering-the.|We came for the shelf. We don't have to win an orienteering event.
+
+ikea-contact
+w|Jag såg en likadan hylla på nätet. Kan det vara samma modell?|I saw a similar shelf on net-the. Can it be same model?|I saw a shelf that looked just like it online. Could it be the same model?
+Vi jämför artikelnumren för säkerhets skull.|We compare item-numbers-the for safety’s sake.|Let's compare the item numbers to make sure.
+Bra. Nummer har inga kusiner som ser likadana ut.|Good. Numbers have no cousins that look alike out.|Good. Item numbers don't have cousins who look just like them.
+
+ikea-edges
+w|Känn på hörnet. Den här modellen har rundade kanter.|Feel on corner-the. This here model-the has rounded edges.|Feel the corner. This model has rounded edges.
+Det passar bra i en trång hall.|It fits well in a cramped hallway.|That'll work well in a narrow hallway.
+Mina höfter tackar redan.|My hips give thanks already.|My hips are grateful already.
+
+ikea-cloth
+shop|Ytan torkas av med en lätt fuktad trasa.|Surface-the is wiped off with a lightly dampened cloth.|Wipe the surface with a slightly damp cloth.
+Så det behövs inget särskilt rengöringsmedel?|So it is needed no special cleaning-agent?|So we don't need a special cleaner?
+Skönt. Vi köper redan en hylla, inte en kemilektion.|Nice. We buy already a shelf, not a chemistry-lesson.|Good. We're buying a shelf, not a chemistry lesson.
+
+ikea-cable
+w|Baksidan har ett litet hål för en sladd.|Back-side-the has a small hole for a cord.|There's a small cable hole in the back.
+Då kan vi ställa den lilla lampan ovanpå.|Then can we put the small lamp-the on top.|Then we can put the little lamp on top.
+Äntligen får sladden en egen genväg.|Finally gets cord-the its own shortcut.|Finally the cable gets a shortcut of its own.
+
+ikea-boxes
+shop|De här lådorna passar om hyllplanet är minst trettio centimeter djupt.|These here boxes-the fit if shelf-plane-the is at least thirty centimetres deep.|These boxes fit if the shelf is at least thirty centimetres deep.
+Vi mäter djupet innan vi väljer en låda.|We measure depth-the before we choose a box.|Let's measure the depth before we pick a box.
+En låda som sticker ut är bara bekymmer med lock.|A box that sticks out is only trouble with lid.|A box that sticks out is just trouble with a lid.
+
+ikea-sketch
+w|På bilden står skorna under hyllan. Så skulle vi också kunna göra.|On picture-the stand shoes-the under shelf-the. So would we also be able to do.|The picture shows shoes under the shelf. We could do that too.
+Jag tar en bild så att vi kommer ihåg idén.|I take a picture so that we come in-memory idea-the.|I'll take a photo so we remember the idea.
+Skorna fick just en planritning.|Shoes-the got just a plan-drawing.|The shoes just got a floor plan.
+
+ikea-material
+shop|Den är gjord av massiv furu. Du kan måla den själv.|It is made of solid pine. You can paint it yourself.|It's made of solid pine. You can paint it yourself.
+Går det bra att låta den vara omålad?|Goes it well to let it be unpainted?|Can we leave it unpainted?
+Bra. Vi kan börja med att bygga den.|Good. We can begin with building it.|Good. We can start by putting it together.
+
+ikea-missing-tag
+n|Etiketten är borta från hyllan, men en medarbetare står bredvid.|Label-the is gone from shelf-the, but a co-worker stands beside.|The shelf's label is missing, but a shop assistant is standing nearby.
+Ursäkta, vad heter den här hyllan?|Excuse [me], what is called this here shelf-the?|Excuse me, what's this shelf called?
+Tur att vi frågade. Jag hade gissat på Bertil.|Luck that we asked. I would have guessed on Bertil.|Good thing we asked. I'd have guessed Bertil.
+
+ikea-basket
+w|Jag vill bara ha två krokar. Vi behöver ingen stor vagn än.|I want only have two hooks. We need no big trolley yet.|I only want two hooks. No need for a big trolley yet.
+Jag hämtar en liten korg så länge.|I fetch a little basket meanwhile.|I'll get a little basket for now.
+Bra. Vi kan uppgradera när det blir allvar.|Good. We can upgrade when it becomes serious.|Good. We can upgrade when things get serious.
+
+ikea-aisle-photo
+w|Ta gärna en bild av etiketten. Där står gång och fack.|Take gladly a picture of label-the. There stand aisle and compartment.|Could you photograph the label? It's got the aisle and bin numbers on it.
+Jag tar en närbild så att siffrorna syns.|I take a near-picture so that numbers-the are visible.|I'll take a close-up so we can see the numbers.
+Vi behöver ingen konstnärlig oskärpa på lagret.|We need no artistic blur at warehouse-the.|We don't need any artistic blur in the warehouse.
+
+ikea-swap-width
+shop|Den högre modellen är också smal nog, men den blir svår att nå.|The higher model-the is also narrow enough, but it becomes hard to reach.|The taller model is narrow enough too, but it'll be hard to reach.
+Vi håller oss till den lägre modellen.|We keep ourselves to the lower model-the.|Let's stick with the shorter model.
+Vår hall behöver ingen klättervägg.|Our hallway needs no climbing-wall.|Our hallway doesn't need a climbing wall.
+
+ikea-testing
+n|En provhylla står uppställd med ett par stövlar på nedersta planet.|A test-shelf stands set-up with a pair boots on lowest plane-the.|There's a display shelf with a pair of boots on the bottom shelf.
+Det finns plats även för våra stövlar.|There exists room even for our boots.|There's even room for our boots.
+Skönt. De har väntat länge på en egen våning.|Nice. They have waited long for their own floor.|Good. They've waited a long time for a floor of their own.

@@ -1,9 +1,9 @@
 use adw::prelude::*;
 use adw::{glib, gtk};
 use gstreamer::{self as gst, prelude::*};
-use learn_swedish::lesson::Phrase;
 #[cfg(unix)]
 use learn_swedish::lesson::speech_phrases;
+use learn_swedish::lesson::{Phrase, Voice};
 use serde::Deserialize;
 use std::cell::{Cell, RefCell};
 use std::error::Error;
@@ -17,9 +17,11 @@ use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+mod azure;
+pub use azure::AzureSpeech;
+
 const VOICES: &[&str] = &["sv_SE-nst-medium", "sv_SE-alma-medium"];
 const AZURE_VOICE: &str = "azure-sv-SE-SofieNeural";
-const ADVENTURE_BANK: &str = "azure-adventure";
 
 #[derive(Clone, Debug, Deserialize)]
 struct WordTiming {
@@ -32,6 +34,8 @@ struct WordTiming {
 struct Timing {
     duration_us: i64,
     words: Vec<WordTiming>,
+    #[serde(default)]
+    sentence_starts_us: Vec<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +53,24 @@ impl Timing {
     fn load(path: &Path, text: &str) -> Result<Self, Box<dyn Error>> {
         let timing: Self = serde_json::from_slice(&fs::read(path)?)?;
         timing.validate(text)?;
+        Ok(timing)
+    }
+
+    fn load_online(path: &Path, text: &str) -> Result<Self, Box<dyn Error>> {
+        let timing: Self = serde_json::from_slice(&fs::read(path)?)?;
+        let starts = &timing.sentence_starts_us;
+        if timing.duration_us <= 0
+            || starts.first().is_some_and(|start| *start != 0)
+            || starts.windows(2).any(|pair| pair[0] >= pair[1])
+            || starts
+                .last()
+                .is_some_and(|start| *start >= timing.duration_us)
+        {
+            return Err(io::Error::other("Invalid Azure sentence timings").into());
+        }
+        if !timing.words.is_empty() {
+            timing.validate(text)?;
+        }
         Ok(timing)
     }
 
@@ -82,6 +104,21 @@ impl Timing {
     }
 
     fn sentences(&self) -> Vec<Sentence> {
+        if !self.sentence_starts_us.is_empty() {
+            return self
+                .sentence_starts_us
+                .iter()
+                .enumerate()
+                .map(|(index, start)| Sentence {
+                    start_us: *start,
+                    end_us: self
+                        .sentence_starts_us
+                        .get(index + 1)
+                        .copied()
+                        .unwrap_or(self.duration_us),
+                })
+                .collect();
+        }
         if self.words.is_empty() {
             return vec![Sentence {
                 start_us: 0,
@@ -126,15 +163,21 @@ pub fn transcript_markup(
             }
         }).collect::<Vec<_>>().join(" ");
         let spoken = if let Some(speaker) = phrase.speaker {
-            format!("<span size=\"small\" weight=\"bold\">{}</span>\n{swedish}", glib::markup_escape_text(speaker))
+            format!("<span size=\"small\" weight=\"bold\">{}</span> · {swedish}", glib::markup_escape_text(speaker))
         } else {
             swedish
         };
-        if show_english && !phrase.english.is_empty() {
-            format!("{spoken}\n<span size=\"small\">{}</span>", glib::markup_escape_text(&phrase.english))
-        } else {
-            spoken
+        let mut text = spoken;
+        if show_english {
+            use std::fmt::Write;
+            if let Some(literal) = phrase.literal {
+                write!(text, "\n<span size=\"small\" style=\"italic\">{}</span>", glib::markup_escape_text(literal)).unwrap();
+            }
+            if !phrase.english.is_empty() {
+                write!(text, "\n<span size=\"small\">{}</span>", glib::markup_escape_text(&phrase.english)).unwrap();
+            }
         }
+        text
     }).collect::<Vec<_>>().join("\n\n")
 }
 
@@ -143,8 +186,17 @@ struct Clip {
     phrase: Phrase,
     phrase_index: usize,
     audio: PathBuf,
+    live_voice: Option<Voice>,
     timing: Timing,
     sentences: Vec<Sentence>,
+}
+
+type Completion = Option<Box<dyn FnOnce(bool)>>;
+
+struct PendingSpeech {
+    request: azure::Request,
+    poll: glib::SourceId,
+    completion: Completion,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,7 +219,7 @@ struct Playback {
     highlighted: Option<(usize, usize)>,
     status: gtk::Label,
     transcript: gtk::Label,
-    completion: Option<Box<dyn FnOnce(bool)>>,
+    completion: Completion,
     reminder: bool,
 }
 
@@ -187,13 +239,15 @@ struct Transcript {
 
 pub struct Speech {
     playback: RefCell<Option<Playback>>,
+    pending: RefCell<Option<PendingSpeech>>,
     timer: RefCell<Option<glib::SourceId>>,
     audio_dirs: Vec<PathBuf>,
     show_english: Cell<bool>,
     auto_pause: Cell<bool>,
     transcript: RefCell<Option<Transcript>>,
     last_sentence: RefCell<Option<LastSentence>>,
-    story_dir: PathBuf,
+    azure: Rc<AzureSpeech>,
+    cast: RefCell<azure::Cast>,
     #[cfg(test)]
     muted: bool,
 }
@@ -230,15 +284,23 @@ pub fn recording_stem(phrase: &Phrase) -> String {
 
 impl Default for Speech {
     fn default() -> Self {
+        Self::with_azure(Rc::new(AzureSpeech::default()))
+    }
+}
+
+impl Speech {
+    pub fn with_azure(azure: Rc<AzureSpeech>) -> Self {
         Self {
             playback: RefCell::new(None),
+            pending: RefCell::new(None),
             timer: RefCell::new(None),
             audio_dirs: audio_directories(&data_dir()),
             show_english: Cell::new(false),
             auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
             last_sentence: RefCell::new(None),
-            story_dir: data_dir().join("speech").join(ADVENTURE_BANK),
+            azure,
+            cast: RefCell::default(),
             #[cfg(test)]
             muted: false,
         }
@@ -309,146 +371,6 @@ pub fn prepare_azure_speech() -> Result<(), Box<dyn Error>> {
 }
 
 #[cfg(unix)]
-pub fn prepare_adventure_speech() -> Result<(), Box<dyn Error>> {
-    let data = data_dir();
-    let python = data.join("azure-env").join("bin").join("python");
-    if !python.is_file() {
-        return Err(io::Error::other(
-            "Azure's preparation environment is missing. Follow README's Azure speech setup.",
-        )
-        .into());
-    }
-    let parent = data.join("speech");
-    fs::create_dir_all(&parent)?;
-    let mut caches = Vec::new();
-    for entry in fs::read_dir(&parent)? {
-        let entry = entry?;
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with("adventure-generation-")
-            && entry.path().is_dir()
-        {
-            caches.push(entry.path());
-        }
-    }
-    let staging = parent.join(format!(
-        "adventure-generation-{}",
-        glib::uuid_string_random()
-    ));
-    fs::create_dir(&staging)?;
-    let result = (|| -> Result<(), Box<dyn Error>> {
-        let phrases = learn_swedish::adventure::speech_phrases();
-        let mut jobs = Vec::new();
-        for voice in [
-            learn_swedish::lesson::Voice::Sofie,
-            learn_swedish::lesson::Voice::Mattias,
-        ] {
-            let selected: Vec<_> = phrases
-                .iter()
-                .filter(|p| p.voice == Some(voice))
-                .cloned()
-                .collect();
-            let target = staging.join(voice.azure_name());
-            fs::create_dir(&target)?;
-            let missing = reuse_azure_audio(
-                &parent.join(ADVENTURE_BANK).join(voice.azure_name()),
-                &target,
-                &selected,
-            )?;
-            let voice_caches: Vec<_> = caches
-                .iter()
-                .map(|cache| cache.join(voice.azure_name()))
-                .collect();
-            for text in missing {
-                let phrase = selected
-                    .iter()
-                    .find(|p| p.swedish == text)
-                    .expect("Missing phrase came from this voice");
-                if !reuse_cached_recording(&voice_caches, &target, phrase)? {
-                    jobs.push(serde_json::json!({"text": text, "voice": voice.azure_name(), "stem": phrase.audio_stem()}));
-                }
-            }
-        }
-        println!(
-            "Story: {} fixed recordings, {} reused, {} to generate.",
-            phrases.len(),
-            phrases.len() - jobs.len(),
-            jobs.len()
-        );
-        if !jobs.is_empty() {
-            // The story manifest is too large for portable command-line limits.
-            let manifest = staging.join("jobs.json");
-            fs::write(
-                &manifest,
-                serde_json::to_vec(&serde_json::json!({"jobs": jobs}))?,
-            )?;
-            let status = Command::new(python)
-                .args([
-                    "-B",
-                    "-c",
-                    include_str!("../scripts/prepare_azure_speech.py"),
-                ])
-                .arg(&staging)
-                .arg(format!("@{}", manifest.display()))
-                .stdin(Stdio::inherit())
-                .status()?;
-            fs::remove_file(manifest)?;
-            if !status.success() {
-                return Err(io::Error::other(format!("Adventure speech preparation failed ({status}); the active story library is unchanged.")).into());
-            }
-        }
-        for voice in [
-            learn_swedish::lesson::Voice::Sofie,
-            learn_swedish::lesson::Voice::Mattias,
-        ] {
-            let selected: Vec<_> = phrases
-                .iter()
-                .filter(|p| p.voice == Some(voice))
-                .cloned()
-                .collect();
-            validate_audio(&staging.join(voice.azure_name()), &selected)?;
-        }
-        publish_bank(&parent, &staging, ADVENTURE_BANK)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        eprintln!(
-            "Completed recordings are retained in {}. Run preparation again to reuse them; the active library is unchanged.",
-            staging.display()
-        );
-    }
-    result?;
-    println!("Adventure voices are ready. Relaunch the app to use them offline.");
-    Ok(())
-}
-
-#[cfg(unix)]
-fn reuse_cached_recording(
-    caches: &[PathBuf],
-    target: &Path,
-    phrase: &Phrase,
-) -> Result<bool, Box<dyn Error>> {
-    for cache in caches {
-        let audio = cache.join(format!("{}.wav", phrase.audio_stem()));
-        let timing = audio.with_extension("json");
-        if audio.exists() || timing.exists() {
-            if let Err(error) = validate_audio(cache, std::slice::from_ref(phrase)) {
-                eprintln!(
-                    "Ignoring incomplete or invalid cached story recording {}: {error}. It will be regenerated if no valid copy exists.",
-                    audio.display()
-                );
-                continue;
-            }
-            fs::copy(audio, target.join(format!("{}.wav", phrase.audio_stem())))?;
-            fs::copy(timing, target.join(format!("{}.json", phrase.audio_stem())))?;
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-#[cfg(unix)]
 fn reuse_azure_audio(
     current: &Path,
     staging: &Path,
@@ -474,11 +396,6 @@ fn reuse_azure_audio(
 
 #[cfg(unix)]
 fn publish_azure(parent: &Path, generation: &Path) -> io::Result<()> {
-    publish_bank(parent, generation, AZURE_VOICE)
-}
-
-#[cfg(unix)]
-fn publish_bank(parent: &Path, generation: &Path, name: &str) -> io::Result<()> {
     let link = parent.join(format!("azure-select-{}", glib::uuid_string_random()));
     std::os::unix::fs::symlink(
         generation
@@ -486,7 +403,7 @@ fn publish_bank(parent: &Path, generation: &Path, name: &str) -> io::Result<()> 
             .expect("A generation directory has a name"),
         &link,
     )?;
-    if let Err(error) = fs::rename(&link, parent.join(name)) {
+    if let Err(error) = fs::rename(&link, parent.join(AZURE_VOICE)) {
         if let Err(cleanup) = fs::remove_file(&link) {
             eprintln!(
                 "Could not remove Azure selection link {}: {cleanup}",
@@ -628,6 +545,26 @@ fn validate_audio(staging: &Path, phrases: &[Phrase]) -> Result<(), Box<dyn Erro
 }
 
 impl Speech {
+    pub fn azure_enabled(&self) -> bool {
+        self.azure.enabled()
+    }
+
+    pub fn azure_region(&self) -> String {
+        self.azure.region()
+    }
+
+    pub fn configure_azure(&self, region: &str, key: &str) -> Result<(), &'static str> {
+        self.azure.configure(region, key)
+    }
+
+    pub fn disable_azure(&self) {
+        self.azure.disable();
+    }
+
+    pub fn recast_guests(&self) {
+        self.cast.replace(azure::Cast::default());
+    }
+
     pub fn set_show_english(&self, show: bool) {
         self.show_english.set(show);
         if let Some(transcript) = self.transcript.borrow().as_ref() {
@@ -662,7 +599,7 @@ impl Speech {
                 let mut text = String::new();
                 if let Some(speaker) = phrase.speaker {
                     text.push_str(speaker);
-                    text.push('\n');
+                    text.push_str(" · ");
                 }
                 text.push_str(
                     &phrase
@@ -671,9 +608,15 @@ impl Speech {
                         .collect::<Vec<_>>()
                         .join(" "),
                 );
-                if self.show_english.get() && !phrase.english.is_empty() {
-                    text.push('\n');
-                    text.push_str(&phrase.english);
+                if self.show_english.get() {
+                    if let Some(literal) = phrase.literal {
+                        text.push('\n');
+                        text.push_str(literal);
+                    }
+                    if !phrase.english.is_empty() {
+                        text.push('\n');
+                        text.push_str(&phrase.english);
+                    }
                 }
                 text
             };
@@ -683,7 +626,7 @@ impl Speech {
                 .sum();
             let speaker = phrases[phrase_index]
                 .speaker
-                .map_or(0, |name| name.len() + 1);
+                .map_or(0, |name| name.len() + " · ".len());
             let words: usize = phrases[phrase_index]
                 .swedish
                 .split_whitespace()
@@ -738,7 +681,7 @@ impl Speech {
     }
 
     pub fn has_last_sentence(&self) -> bool {
-        self.last_sentence.borrow().is_some()
+        self.pending.borrow().is_none() && self.last_sentence.borrow().is_some()
     }
 
     pub fn clear_last_sentence(&self) {
@@ -762,6 +705,14 @@ impl Speech {
     }
 
     pub fn stop(&self) {
+        let pending = self.pending.borrow_mut().take();
+        if let Some(pending) = pending {
+            pending.poll.remove();
+            drop(pending.request);
+            if let Some(completion) = pending.completion {
+                completion(false);
+            }
+        }
         self.stop_timer();
         let playback = self.playback.borrow_mut().take();
         if let Some(mut playback) = playback {
@@ -1101,11 +1052,153 @@ impl Speech {
         phrases: Vec<Phrase>,
         status: &gtk::Label,
         transcript: &gtk::Label,
-        completion: Option<Box<dyn FnOnce(bool)>>,
+        completion: Completion,
         audio_dir: Option<PathBuf>,
     ) {
         self.stop();
         self.show_transcript(&phrases, transcript);
+        let story = !phrases.is_empty()
+            && phrases
+                .iter()
+                .all(|phrase| phrase.voice.is_some() && phrase.speaker.is_some());
+        if story {
+            self.start_online(phrases, status, transcript, completion);
+        } else {
+            self.start_offline(phrases, status, transcript, completion, audio_dir);
+        }
+    }
+
+    fn start_online(
+        self: &Rc<Self>,
+        phrases: Vec<Phrase>,
+        status: &gtk::Label,
+        transcript: &gtk::Label,
+        completion: Completion,
+    ) {
+        if !self.azure_enabled() {
+            status.set_label("Open Azure Speech in the header to set up live read-aloud.");
+            if let Some(completion) = completion {
+                completion(false);
+            }
+            return;
+        }
+        let mut cast = self.cast.borrow_mut();
+        let utterances: Vec<_> = phrases
+            .iter()
+            .map(|phrase| cast.utterance(phrase))
+            .collect();
+        drop(cast);
+        if let Some(recordings) = self.azure.cached(&utterances) {
+            self.play_online(
+                phrases,
+                &utterances,
+                recordings,
+                status,
+                transcript,
+                completion,
+            );
+            return;
+        }
+        let request = match self.azure.request(&utterances) {
+            Ok(request) => request,
+            Err(error) => {
+                Self::report_online_error(status, &error);
+                if let Some(completion) = completion {
+                    completion(false);
+                }
+                return;
+            }
+        };
+        status.set_label("Getting Swedish audio from Azure…");
+        let weak = Rc::downgrade(self);
+        let status = status.clone();
+        let transcript = transcript.clone();
+        let mut phrases = Some(phrases);
+        let poll = glib::timeout_add_local(Duration::from_millis(30), move || {
+            let Some(speech) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let mut state = speech.pending.borrow_mut();
+            let Some(pending) = state.as_mut() else {
+                return glib::ControlFlow::Break;
+            };
+            let Some(result) = pending.request.poll() else {
+                return glib::ControlFlow::Continue;
+            };
+            let pending = state.take().expect("Polling an active Azure request");
+            drop(state);
+            let phrases = phrases.take().expect("The request completes only once");
+            let result = match result {
+                Ok(()) => speech.azure.save(pending.request).and_then(|()| {
+                    speech
+                        .azure
+                        .cached(&utterances)
+                        .ok_or_else(|| "Azure did not return all the requested recordings.".into())
+                }),
+                Err(error) => {
+                    drop(pending.request);
+                    Err(error)
+                }
+            };
+            match result {
+                Ok(recordings) => speech.play_online(
+                    phrases,
+                    &utterances,
+                    recordings,
+                    &status,
+                    &transcript,
+                    pending.completion,
+                ),
+                Err(error) => {
+                    Self::report_online_error(&status, &error);
+                    if let Some(completion) = pending.completion {
+                        completion(false);
+                    }
+                }
+            }
+            glib::ControlFlow::Break
+        });
+        self.pending.replace(Some(PendingSpeech {
+            request,
+            poll,
+            completion,
+        }));
+    }
+
+    fn play_online(
+        self: &Rc<Self>,
+        phrases: Vec<Phrase>,
+        utterances: &[azure::Utterance],
+        recordings: Vec<azure::Recording>,
+        status: &gtk::Label,
+        transcript: &gtk::Label,
+        completion: Completion,
+    ) {
+        let clips = phrases
+            .iter()
+            .zip(utterances)
+            .zip(recordings)
+            .enumerate()
+            .map(|(phrase_index, ((phrase, utterance), recording))| Clip {
+                phrase: phrase.clone(),
+                phrase_index,
+                audio: recording.audio,
+                live_voice: Some(utterance.voice()),
+                sentences: recording.timing.sentences(),
+                timing: recording.timing,
+            });
+        let clips = clips.collect();
+        self.play_clips(phrases, clips, status, transcript, completion);
+    }
+
+    fn start_offline(
+        self: &Rc<Self>,
+        phrases: Vec<Phrase>,
+        status: &gtk::Label,
+        transcript: &gtk::Label,
+        completion: Completion,
+        audio_dir: Option<PathBuf>,
+    ) {
         let audio_dir = audio_dir.unwrap_or_else(|| {
             let choice = usize::try_from(glib::random_int_range(
                 0,
@@ -1118,12 +1211,8 @@ impl Speech {
             .iter()
             .enumerate()
             .map(|(phrase_index, phrase)| -> Result<Clip, Box<dyn Error>> {
-                let directory = phrase.voice.map_or_else(
-                    || audio_dir.clone(),
-                    |voice| self.story_dir.join(voice.azure_name()),
-                );
                 let stem = recording_stem(phrase);
-                let audio = directory.join(format!("{stem}.wav"));
+                let audio = audio_dir.join(format!("{stem}.wav"));
                 if !audio.is_file() {
                     return Err(io::Error::other(format!(
                         "Speech audio is missing: {}",
@@ -1132,26 +1221,20 @@ impl Speech {
                     .into());
                 }
                 let timing =
-                    Timing::load(&directory.join(format!("{stem}.json")), &phrase.swedish)?;
+                    Timing::load(&audio_dir.join(format!("{stem}.json")), &phrase.swedish)?;
                 let sentences = timing.sentences();
                 Ok(Clip {
                     phrase: phrase.clone(),
                     phrase_index,
                     audio,
+                    live_voice: None,
                     timing,
                     sentences,
                 })
             })
             .collect::<Result<Vec<_>, _>>();
         let clips = match clips {
-            Ok(clips) if !clips.is_empty() => clips,
-            Ok(_) => {
-                Self::report_error(status, "No phrases were supplied for playback");
-                if let Some(completion) = completion {
-                    completion(false);
-                }
-                return;
-            }
+            Ok(clips) => clips,
             Err(error) => {
                 Self::report_error(status, &error.to_string());
                 if let Some(completion) = completion {
@@ -1160,6 +1243,24 @@ impl Speech {
                 return;
             }
         };
+        self.play_clips(phrases, clips, status, transcript, completion);
+    }
+
+    fn play_clips(
+        self: &Rc<Self>,
+        phrases: Vec<Phrase>,
+        clips: Vec<Clip>,
+        status: &gtk::Label,
+        transcript: &gtk::Label,
+        completion: Completion,
+    ) {
+        if clips.is_empty() {
+            Self::report_error(status, "No phrases were supplied for playback");
+            if let Some(completion) = completion {
+                completion(false);
+            }
+            return;
+        }
         let media = match self.media(&clips[0].audio) {
             Ok(media) => media,
             Err(error) => {
@@ -1362,13 +1463,15 @@ impl Speech {
         glib::ControlFlow::Break
     }
 
+    fn report_online_error(status: &gtk::Label, message: &str) {
+        eprintln!("Azure Speech: {message}");
+        status.set_label(&format!("{message} Text mode still works."));
+    }
+
     fn report_error(status: &gtk::Label, message: &str) {
         eprintln!("Speech: {message}");
-        #[cfg(windows)]
-        let setup = "See README for the optional speech download and check Windows audio output.";
-        #[cfg(not(windows))]
-        let setup = if message.contains(ADVENTURE_BANK) {
-            "Prepare story voices: cargo run --locked -- --prepare-adventure-speech."
+        let setup = if cfg!(windows) {
+            "See README for the optional speech download and check Windows audio output."
         } else {
             "Check README's speech setup, GStreamer audio plugins and audio output."
         };
@@ -1376,6 +1479,13 @@ impl Speech {
     }
 
     fn voice_tooltip(label: &gtk::Label, clip: &Clip) {
+        if let Some(voice) = clip.live_voice {
+            label.set_tooltip_text(Some(&format!(
+                "Speech voice: {} · Azure live",
+                voice.azure_name()
+            )));
+            return;
+        }
         let voice = clip
             .audio
             .parent()
@@ -1385,9 +1495,12 @@ impl Speech {
     }
 
     #[cfg(test)]
-    pub fn for_story_test(directory: PathBuf) -> Self {
-        let mut speech = Self::for_test(vec![directory.clone()], true);
-        speech.story_dir = directory;
+    pub fn for_live_test(worker: &'static str) -> Self {
+        let mut speech = Self::for_test(
+            vec![glib::tmp_dir().join(glib::uuid_string_random().as_str())],
+            true,
+        );
+        speech.azure = Rc::new(AzureSpeech::with_worker(worker));
         speech
     }
 
@@ -1396,13 +1509,15 @@ impl Speech {
         assert!(!audio_dirs.is_empty());
         Self {
             playback: RefCell::new(None),
+            pending: RefCell::new(None),
             timer: RefCell::new(None),
             audio_dirs,
             show_english: Cell::new(false),
             auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
             last_sentence: RefCell::new(None),
-            story_dir: data_dir().join("speech").join(ADVENTURE_BANK),
+            azure: Rc::new(AzureSpeech::default()),
+            cast: RefCell::default(),
             muted,
         }
     }
@@ -1414,47 +1529,32 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    #[ignore = "Requires the optional voice banks and a Windows audio device"]
+    #[ignore = "Requires the optional keyboard voice bank and a Windows audio device"]
     fn portable_windows_banks_play_with_bundled_audio_plugins() {
         let data = data_dir();
         let keyboard = speech_clip_path(&data, AZURE_VOICE, "Bokstaven Å");
         let speech = Speech::default();
-        let story = learn_swedish::adventure::speech_phrases();
-        let mut clips = vec![(keyboard, "Bokstaven Å".to_owned())];
         for phrase in learn_swedish::lesson::speech_phrases() {
             let audio = speech_clip_path(&data, AZURE_VOICE, &recording_stem(&phrase));
             assert!(audio.is_file(), "Missing {}", audio.display());
             Timing::load(&audio.with_extension("json"), &phrase.swedish).unwrap();
         }
-        for voice in ["sv-SE-SofieNeural", "sv-SE-MattiasNeural"] {
-            let phrase = story
-                .iter()
-                .find(|phrase| phrase.voice.map(|voice| voice.azure_name()) == Some(voice))
-                .expect("Story includes both voices");
-            let bank = format!("{ADVENTURE_BANK}/{voice}");
-            clips.push((
-                speech_clip_path(&data, &bank, &phrase.audio_stem()),
-                phrase.swedish.clone(),
-            ));
-        }
-        for (audio, text) in clips {
-            let timing = Timing::load(&audio.with_extension("json"), &text).unwrap();
-            assert_eq!(timing.word_at(timing.words[0].start_us), Some(0));
-            let pipeline = speech.media(&audio).unwrap();
-            let message = pipeline.bus().unwrap().timed_pop_filtered(
-                gst::ClockTime::from_seconds(10),
-                &[gst::MessageType::Error, gst::MessageType::Eos],
-            );
-            pipeline.set_state(gst::State::Null).unwrap();
-            assert!(
-                matches!(
-                    message.as_ref().map(|message| message.view()),
-                    Some(gst::MessageView::Eos(_))
-                ),
-                "Playback failed for {}: {message:?}",
-                audio.display()
-            );
-        }
+        let timing = Timing::load(&keyboard.with_extension("json"), "Bokstaven Å").unwrap();
+        assert_eq!(timing.word_at(timing.words[0].start_us), Some(0));
+        let pipeline = speech.media(&keyboard).unwrap();
+        let message = pipeline.bus().unwrap().timed_pop_filtered(
+            gst::ClockTime::from_seconds(10),
+            &[gst::MessageType::Error, gst::MessageType::Eos],
+        );
+        pipeline.set_state(gst::State::Null).unwrap();
+        assert!(
+            matches!(
+                message.as_ref().map(|message| message.view()),
+                Some(gst::MessageView::Eos(_))
+            ),
+            "Playback failed for {}: {message:?}",
+            keyboard.display()
+        );
     }
 
     #[cfg(windows)]
@@ -1473,6 +1573,7 @@ mod tests {
         fs::create_dir(&staging).unwrap();
         let phrase = Phrase {
             english: "Good job!".into(),
+            literal: None,
             swedish: "Bra jobbat!".into(),
             voice: None,
             speaker: None,
@@ -1492,11 +1593,7 @@ mod tests {
             fs::read_to_string(staging.join("Bra jobbat!.json")).unwrap(),
             json
         );
-        assert!(reuse_cached_recording(std::slice::from_ref(&current), &staging, &phrase).unwrap());
         fs::write(current.join("Bra jobbat!.json"), "{}").unwrap();
-        assert!(
-            !reuse_cached_recording(std::slice::from_ref(&current), &staging, &phrase).unwrap()
-        );
         assert!(reuse_azure_audio(&current, &staging, &[phrase]).is_err());
         clean_staging(&current).unwrap();
         clean_staging(&staging).unwrap();
@@ -1542,6 +1639,7 @@ mod tests {
     fn timings() -> Timing {
         Timing {
             duration_us: 1_000_000,
+            sentence_starts_us: Vec::new(),
             words: vec![
                 WordTiming {
                     word: "Bra".into(),
@@ -1585,20 +1683,25 @@ mod tests {
         let phrases = vec![
             Phrase {
                 english: "Less < & more".into(),
+                literal: Some("Literal < & >"),
                 swedish: "Mindre än".into(),
                 voice: None,
                 speaker: None,
             },
             Phrase {
                 english: "Good job!".into(),
+                literal: None,
                 swedish: "Bra jobbat!".into(),
                 voice: None,
                 speaker: None,
             },
         ];
         let markup = transcript_markup(&phrases, Some((1, 0)), true);
-        assert!(markup.contains("Less &lt; &amp; more"));
-        assert!(markup.contains("Mindre än"));
+        assert!(markup.starts_with(concat!(
+            "Mindre än\n",
+            "<span size=\"small\" style=\"italic\">Literal &lt; &amp; &gt;</span>\n",
+            "<span size=\"small\">Less &lt; &amp; more</span>",
+        )));
         assert!(markup.contains("Good job!"));
         assert!(markup.contains("weight=\"bold\">Bra</span> jobbat!"));
         assert_eq!(markup.matches("background=").count(), 1);
@@ -1606,6 +1709,7 @@ mod tests {
         let swedish_only = transcript_markup(&phrases, Some((1, 0)), false);
         assert!(!swedish_only.contains("Good job!"));
         assert!(!swedish_only.contains("Less"));
+        assert!(!swedish_only.contains("Literal"));
         assert!(swedish_only.contains("weight=\"bold\">Bra</span> jobbat!"));
     }
 
@@ -1613,6 +1717,7 @@ mod tests {
     fn sentence_splitting_uses_terminal_punctuation_and_clip_end() {
         let timing = Timing {
             duration_us: 1_500_000,
+            sentence_starts_us: Vec::new(),
             words: vec![
                 WordTiming {
                     word: "Det".into(),

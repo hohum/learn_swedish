@@ -1,0 +1,124 @@
+woods-coffee-flask
+w|Jag får inte av locket på termosen.|I get not off lid-the on flask-the.|I can't get the lid off the flask.
+Ge mig termosen så försöker jag.|Give me flask-the so try I.|Give me the flask and I'll try.
+Dagens viktlyftning är avklarad.|Day-the’s weight-lifting is completed.|That's today's weightlifting done.
+
+woods-sandwiches
+w|Den ena mackan har ost och den andra har skinka. Vilken vill du ha?|The one sandwich-the has cheese and the other has ham. Which want you have?|One sandwich has cheese and the other has ham. Which would you like?
+Jag tar ostmackan, tack.|I take cheese-sandwich-the, please.|I'll have the cheese sandwich, please.
+Då slipper den välja själv.|Then escapes it choosing itself.|That saves it having to choose for itself.
+
+woods-wasp
+n|En geting letar efter något sött vid din äppelbit.|A wasp looks for something sweet by your apple-piece.|A wasp is looking for something sweet near your slice of apple.
+Jag lägger undan äpplet en stund.|I lay away apple-the a while.|I'll put the apple away for a minute.
+Kaféet har tillfälligt stängt.|Café-the has temporarily closed.|The café is temporarily closed.
+
+woods-crumbs
+w|Har du något att torka bort smulorna med?|Have you something to wipe away crumbs-the with?|Have you got something to wipe away the crumbs?
+Ja, här är en servett.|Yes, here is a napkin.|Yes, here's a napkin.
+Bra. Bordet behöver inte veta vad vi åt.|Good. Table-the needs not know what we ate.|Good. The table doesn't need to know what we ate.
+
+woods-trash
+n|Soptunnan är full. Det finns en tom påse i ryggsäcken.|Rubbish-bin-the is full. There exists an empty bag in backpack-the.|The bin is full. There's an empty bag in the backpack.
+Vi tar med skräpet hem i påsen.|We take along rubbish-the home in bag-the.|We'll take the rubbish home in the bag.
+Bra. Inga souvenirer åt kråkorna.|Good. No souvenirs for crows-the.|Good. No souvenirs for the crows.
+
+woods-shared-bench
+walk|Är det okej om vi sitter på andra sidan bordet?|Is it okay if we sit on other side-the of table-the?|Is it okay if we sit at the other end of the table?
+Javisst, det finns plats för er också.|Of course, there exists room for you [plural] too.|Of course, there's room for you too.
+Picknicken fick visst en större publik.|Picnic-the got apparently a bigger audience.|Looks like the picnic got a bigger audience.
+
+woods-spill
+w|Oj, jag spillde lite kaffe på bordet.|Oops, I spilled a little coffee on table-the.|Oops, I spilled a bit of coffee on the table.
+Ingen fara. Jag torkar upp det.|No danger. I wipe up it.|No worries. I'll wipe it up.
+Bordet ville väl också fika.|Table-the wanted surely also have fika.|I guess the table wanted a coffee break too.
+
+woods-seat-pad
+w|Bänken känns kall. Finns sittunderlagen i väskan?|Bench-the feels cold. Exist sitting-pads-the in bag-the?|The bench feels cold. Are the seat pads in the bag?
+Ja, de ligger längst ner.|Yes, they lie farthest down.|Yes, they're right at the bottom.
+Precis där allt användbart hamnar.|Exactly where everything useful ends up.|Right where everything useful ends up.
+
+woods-ant
+n|En myra drar iväg med en smula som är större än den själv.|An ant pulls away with a crumb that is bigger than it itself.|An ant drags off a crumb bigger than itself.
+Den verkar ha hittat lunch till hela familjen.|It seems to have found lunch for whole family-the.|Looks like it's found lunch for the whole family.
+Den får säkert bära matkassen hemma också.|It gets surely carry shopping-bag-the at home too.|I bet it carries the shopping at home too.
+
+woods-place-photo
+walk|Skulle du kunna ta en bild på oss vid bordet?|Would you be able to take a picture on us by table-the?|Could you take a picture of us at the table?
+Absolut. Kliv lite närmare varandra.|Absolutely. Step a little closer to one another.|Of course. Stand a little closer together.
+Bra. Ingen hann blunda.|Good. Nobody had time close their eyes.|Good. Nobody had time to blink.
+
+woods-wind-cup
+n|En tom pappmugg börjar rulla iväg i vinden.|An empty paper-cup begins roll away in wind-the.|An empty paper cup starts rolling away in the wind.
+Jag hinner ta den innan den blåser bort.|I have time take it before it blows away.|I can grab it before it blows away.
+Bra räddning. Muggen kom nästan till final.|Good save. Cup-the came almost to final-the.|Good save. The cup nearly made it to the final.
+
+woods-sugar
+w|Glömde vi socker eller ligger det i sidofickan?|Forgot we sugar or lies it in side-pocket-the?|Did we forget the sugar, or is it in the side pocket?
+Det ligger här, bredvid skedarna.|It lies here, beside spoons-the.|It's here, next to the spoons.
+Då blir kaffet som folk igen.|Then becomes coffee-the like people again.|Now the coffee will be fit to drink again.
+
+woods-glasses
+w|Mina glasögon immar igen när jag dricker te.|My glasses fog up when I drink tea.|My glasses fog up when I drink tea.
+Här, du kan låna min putsduk.|Here, you can borrow my polishing-cloth.|Here, you can borrow my lens cloth.
+Tack. Nu blev utsikten plötsligt skarp.|Thanks. Now became view-the suddenly sharp.|Thanks. The view just snapped back into focus.
+
+woods-hand
+walk|Kan du ge mig ett handtag med den här tunga korgen?|Can you give me a handle with this here heavy basket-the?|Could you give me a hand with this heavy basket?
+Visst. Jag tar den andra sidan.|Sure. I take the other side-the.|Sure. I'll take the other side.
+Ett handtag var det enda korgen saknade.|One handle was the only thing basket-the lacked.|A handle was the one thing the basket was missing.
+
+woods-shortcut
+w|Någon säger att genvägen är längre när det är lerigt.|Someone says that shortcut-the is longer when it is muddy.|Someone says the shortcut takes longer when it's muddy.
+Då tar vi den vanliga vägen hem.|Then take we the usual way-the home.|Then let's take the usual way home.
+Ibland är en genväg mest ett förslag.|Sometimes is a shortcut mostly a suggestion.|Sometimes a shortcut is only a suggestion.
+
+woods-waterproof
+w|Behöver du hjälp att få på regnskyddet på ryggsäcken?|Need you help to get on rain-cover-the on backpack-the?|Need help getting the rain cover onto the backpack?
+Håll i väskan så drar jag över skyddet.|Hold in bag-the so pull I over cover-the.|Hold the bag and I'll pull the cover over it.
+Så där. Väskan är redo för höstkollektionen.|Like that there. Bag-the is ready for autumn-collection-the.|There we go. The bag is ready for the autumn collection.
+
+woods-last-bite
+w|Det finns bara en bit choklad kvar. Ska vi dela på den?|There exists only one piece chocolate left. Shall we share on it?|There's one piece of chocolate left. Shall we split it?
+Gärna. Jag bryter den i två delar.|Gladly. I break it into two parts.|Yes, please. I'll break it into two pieces.
+Du får mäta med ögonmått.|You get measure with eye-measure.|You'll have to eyeball it.
+
+woods-borrow-pen
+walk|Har ni en penna? Jag vill skriva i gästboken.|Have you [plural] a pen? I want write in guest-book-the.|Do you have a pen? I'd like to write in the guest book.
+Ja, du kan låna min.|Yes, you can borrow mine.|Yes, you can borrow mine.
+Nu har vår penna också varit på utflykt.|Now has our pen also been on outing.|Now our pen has been on an outing too.
+
+woods-blanket
+w|Kan du vika ihop filten medan jag packar väskan?|Can you fold together blanket-the while I pack bag-the?|Could you fold up the blanket while I pack the bag?
+Visst. Jag skakar av den först.|Sure. I shake off it first.|Sure. I'll shake it out first.
+Vi behöver inte ta med hela skogsbotten hem.|We need not take along whole forest-floor-the home.|We don't need to take the whole forest floor home.
+
+woods-chill
+w|Jag fryser lite om händerna. Har du kvar vantarna?|I freeze a little around hands-the. Have you still mittens-the?|My hands are getting cold. Have you still got the mittens?
+Ja, här får du båda två.|Yes, here get you both two.|Yes, here, take both of them.
+Tack. Mina händer har gett upp sommaren.|Thanks. My hands have given up summer-the.|Thanks. My hands have given up on summer.
+
+woods-bottlecap
+n|Ett flasklock har rullat in under bordet.|A bottle-cap has rolled in under table-the.|A bottle cap has rolled under the table.
+Jag plockar upp det innan vi går.|I pick up it before we go.|I'll pick it up before we leave.
+Bra. Flaskan gillar att sluta tätt.|Good. Bottle-the likes to close tightly.|Good. The bottle likes a tight seal.
+
+woods-cloud
+w|På håll ser det där molnet ut som en säl.|At distance looks that there cloud-the out like a seal.|From here, that cloud looks like a seal.
+Nu när du säger det ser jag det också.|Now when you say it see I it too.|Now that you mention it, I see it too.
+En säl med ovanligt stora öron.|A seal with unusually big ears.|A seal with very big ears.
+
+woods-hike-plan
+walk|Hinner man runt hela sjön före lunch?|Has time one around whole lake-the before lunch?|Can you get round the whole lake before lunch?
+Det beror på hur fort du går.|It depends on how fast you go.|That depends on how fast you walk.
+Och hur många gånger du stannar för att fika.|And how many times you stop in order to have fika.|And how many times you stop for fika.
+
+woods-to-go
+w|Jag orkar inte äta upp den andra mackan.|I have energy not eat up the other sandwich-the.|I can't manage the second sandwich.
+Vi sparar den till senare.|We save it for later.|We'll save it for later.
+En macka med flexibel arbetstid.|A sandwich with flexible working-time.|A sandwich with flexible hours.
+
+woods-pocket-check
+w|Känn efter att du har telefonen innan vi går.|Feel around that you have phone-the before we go.|Check that you've got your phone before we leave.
+Den ligger i innerfickan.|It lies in inner-pocket-the.|It's in my inside pocket.
+Skönt. Ingen behöver ringa en stubbe.|Nice. Nobody needs call a stump.|Good. Nobody needs to ring a tree stump.

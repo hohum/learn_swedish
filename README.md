@@ -46,8 +46,8 @@ or larger system text/scaling settings.
   practice set resets them; nothing is saved.
 
 Levels 2–10 (progressively faster practice) and microphone recognition are
-**not implemented yet**. No microphone is opened. Practice runs entirely offline;
-only Azure preparation sends the fixed Swedish curriculum text to Microsoft.
+**not implemented yet**. No microphone is opened. Keyboard practice runs offline
+with prepared recordings.
 
 ## Story adventure
 
@@ -65,6 +65,12 @@ wife helps you find the words. Every outing starts at home and returns home:
 - **Gothenburg by train:** tickets, delays, a cancelled train and replacement
   bus, ordering fika, sharing a café table, a toilet code and the journey home.
 
+The adventure has 335 possible pages, including 300 new encounters. Each
+outing draws three encounters from its own pools. At Willys, you might buy
+three ripe pears, hunt for wholegrain mustard, or pick a substitute for sold-out
+halloumi. The woods, IKEA and Gothenburg have their own surprises, from a
+dog shaking water everywhere to a tram announcement that catches you out.
+
 Each illustrated page contains Swedish narration, dialogue and a question with
 four responses. Click a response, enter **1–4**, or type the complete Swedish
 response and press **Enter**. Case and final `.?!` do not matter; Swedish spelling
@@ -72,14 +78,27 @@ and accents still do. Wrong choices receive a dry, good-natured reply from your
 wife, then **Try again** returns to the same question. **Continue** follows the
 chosen route after a successful answer. Destination choices are all valid.
 Nothing records microphone audio, and typed answers are never sent to Azure.
-Progress is session-only; **Restart book** returns to the beginning.
+Progress is session-only. **New outing** appears when you get home and takes
+you straight back to the destination choice. **Restart book** returns to the
+beginning. Both draw different encounters from the previous run in that window.
 
 The silent start menu also offers **Tangentbordsövning / Keyboard practice**.
 Choose **Meny / Menu** in either activity to return to the start menu; opening an
 activity again starts a fresh session.
 
-**Show English hints** is off by default and controls both the story transcript
-and response translations. **Read aloud** reads the page, its question and all
+**Show English hints** is off by default. Turn it on to see three lines for
+story dialogue, responses and feedback. The second line is literal English in
+italics, and the third is natural English.
+
+Först efteråt gick det upp för mig vad hon menade.<br>
+*Only afterwards went it up for me what she meant.*<br>
+I didn't realize what she meant until later.
+
+The literal line follows Swedish word order and shows how compound words fit
+together. For example, `rain-jacket-the` shows the parts of `regnjackan`,
+including the definite ending.
+
+**Read aloud** reads the page, its question and all
 four options, then reads your selected response and the reply. Responses are
 locked during speech; turn off Read aloud to stop playback and read at your own
 pace. Press **Space** to pause or resume speech immediately (and type spaces
@@ -89,48 +108,68 @@ each sentence boundary, or use **Skip** (`Ctrl+→`) to skip the
 current question without answering. Replay repeats the current page or feedback.
 Highlighting uses measured word timings and automatically follows the current
 passage in its scroll area.
-Male roles use **Azure Mattias**; female roles, including your wife, use
-**Azure Sofie**. The narrator is male. Several characters share each voice,
-but their Swedish role labels identify who is speaking.
+With live speech, **Mattias** reads your lines and the narration, and **Sofie**
+reads your wife's lines at her default pitch and speed. Guests draw from
+**Hillevi**, **Sofie**, and **Mattias** as their roles allow. Each guest keeps
+their own pitch and speed through the outing. A new outing casts the guests
+again.
 
 The original location illustrations are drawn as scalable vector scenes by the
 app: home, forest, supermarket, road, furniture store, railway and city café.
 They need no downloads, network access or external image models.
 
-### Prepare the adventure voices
+### Live adventure speech (Azure API key required)
 
-The keyboard voice bank does **not** contain the story dialogue. First complete
-the Azure Python environment setup below, close the app, and run in PowerShell
-from the project directory:
+Story adventure audio is synthesized online on demand — **you need your own
+Microsoft Azure Speech API key** to hear the story read aloud. No API key or
+story audio is bundled in the app. Without a key (or after choosing **Azure
+Speech → Turn off speech**), the story still works in silent text mode, and
+**Keyboard practice** continues to work completely offline with the optional
+keyboard voice download below.
 
-```powershell
-wsl -d Ubuntu -- cargo run --locked -- --prepare-adventure-speech
-```
+1. **Create an Azure Speech resource and copy your region and key:**
+   - Sign in to the [Azure Portal](https://portal.azure.com/) and create a
+     **Speech** resource (**Create a resource → Azure AI services → Speech**).
+     The **Free F0** pricing tier works well for story practice.
+   - Open your resource's **Keys and Endpoint** page and copy:
+     - **Location/Region** — the lowercase region code such as `swedencentral`
+       or `australiaeast` (not the full endpoint URL).
+     - **KEY 1** — your Azure Speech API key.
 
-In an Ubuntu terminal, use `cargo run --locked -- --prepare-adventure-speech`;
-an installed binary from an updated build accepts
-`learn-swedish --prepare-adventure-speech`.
-Enter the key only at the hidden terminal prompt. The command displays how many
-fixed recordings it will reuse or generate. A full story requires many more
-recordings than keyboard practice; allow **tens of minutes** at F0's request
-limit and check your quota/pricing before starting. Only the authored Swedish
-story is sent, with the selected prebuilt voice for each line. No credentials
-are stored. Generation remains below 20 requests per minute.
+2. **Install the Python Azure Speech SDK once:**
+   - **Ubuntu or WSL** (if you already set up `azure-env` for keyboard speech,
+     the app finds it automatically):
+     ```sh
+     azure_env="${XDG_DATA_HOME:-$HOME/.local/share}/learn-swedish/azure-env"
+     python3 -m venv "$azure_env"
+     "$azure_env/bin/python" -m pip install azure-cognitiveservices-speech==1.53.0
+     ```
+   - **Windows 11** (install [Python for Windows](https://www.python.org/downloads/windows/),
+     then run once in PowerShell):
+     ```powershell
+     $azureEnv = Join-Path $env:LOCALAPPDATA 'learn-swedish\azure-env'
+     py -m venv $azureEnv
+     & (Join-Path $azureEnv 'Scripts\python.exe') -m pip install azure-cognitiveservices-speech==1.53.0
+     ```
+   - Set `AZURE_SPEECH_PYTHON` to the full path of your Python executable if you
+     keep the SDK in a different environment.
 
-Story audio is kept separately under
-`~/.local/share/learn-swedish/speech/azure-adventure`, with one directory per
-voice, and never replaces your keyboard recordings. Updates reuse validated
-story recordings and publish the new bank only after every requested recording
-and its timings pass validation. If preparation fails, completed recordings are
-retained and reused on the next attempt; incomplete cache entries are reported
-and regenerated. The v0.2.0 optional speech download contains both the keyboard
-and adventure banks. Until preparation or installation is complete,
-the book still works as a text adventure; missing audio is reported visibly.
-Generated story audio is also subject to the Azure terms described below.
+3. **Add your Azure key in the app:**
+   - Open **Välj ditt eget äventyr / Choose your own adventure**, click **Azure
+     Speech** in the top-right header bar, enter your **Resource region** and
+     paste **KEY 1** into **Speech key**, then click **Use live speech**.
+   - Alternatively, set `SPEECH_REGION` and `SPEECH_KEY` in the environment that
+     launches the app (using the in-app password field avoids leaving keys in
+     shell history).
+   - The app holds your key in memory for the current session only (never saved
+     to disk) and sends only the authored Swedish story lines for synthesis. It
+     uses SSML bookmarks for sentence controls, highlights words when Azure
+     supplies usable word boundaries, caches synthesized lines for the rest of
+     the session, and caps new requests at 20 per minute ([Azure Speech F0 quotas](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-services-quotas-and-limits)).
 
 ## Download and run on Windows 11
 
-Download `learn-swedish-0.4.0-windows-x64.zip` from
+Download `learn-swedish-0.5.0-windows-x64.zip` from
 [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
 inside the extracted folder. Keep the extracted files together. No WSL,
@@ -138,10 +177,9 @@ administrator access, Rust or separate GTK install is needed. Add the Swedish
 keyboard in Windows language settings and use **Windows+Space** to select it.
 The portable ZIP is not code-signed.
 
-To add optional offline voices, download the existing
+To add optional offline voices for **Keyboard practice**, download the existing
 [v0.2.0 speech archive](https://github.com/hohum/learn_swedish/releases/download/v0.2.0/learn-swedish-speech-0.2.0.tar.gz).
-It is the same keyboard and story content; no Azure account or regeneration is
-needed. See the Azure terms note under Ubuntu below. Close the app, open
+See the Azure terms note under Ubuntu below. Close the app, open
 PowerShell in the extracted app folder (the folder containing `bin`), and run:
 
 ```powershell
@@ -149,9 +187,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install_windows_speech
 ```
 
 Use the actual path to the archive if you saved it elsewhere. The script checks
-the archive's SHA-256 and installs both banks into the portable folder without
-symlinks. `-ExecutionPolicy Bypass` only applies to that PowerShell process.
-Speech preparation still runs on Ubuntu, not in the Windows app.
+the archive's SHA-256 and installs the keyboard voice bank into the portable
+folder without symlinks. `-ExecutionPolicy Bypass` only applies to that
+PowerShell process. Story adventure speech is synthesized online on demand via
+**Azure Speech** (see **Live adventure speech** above).
 
 ### Build the Windows ZIP
 
@@ -173,7 +212,7 @@ Ubuntu releases or ARM devices.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.4.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.5.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 
@@ -183,9 +222,10 @@ binary is also available; it requires the same native libraries as the `.deb`.
 Verify downloads with `sha256sum --ignore-missing -c SHA256SUMS` after downloading
 your chosen files and their checksum file.
 
-**Speech recordings are a separate optional download**, not bundled in the
-app packages. Download [learn-swedish-speech-0.2.0.tar.gz](https://github.com/hohum/learn_swedish/releases/download/v0.2.0/learn-swedish-speech-0.2.0.tar.gz) for
-the keyboard and adventure recordings and their word timings.
+**Keyboard speech recordings are a separate optional download**, not bundled in
+the app packages. Download [learn-swedish-speech-0.2.0.tar.gz](https://github.com/hohum/learn_swedish/releases/download/v0.2.0/learn-swedish-speech-0.2.0.tar.gz) for
+the offline keyboard recordings and their word timings (story speech is
+synthesized online on demand; see **Live adventure speech** above).
 Close the app, then install the recordings from your download directory:
 
 ```sh
@@ -194,9 +234,9 @@ mkdir -p "$data"
 tar -xzf learn-swedish-speech-0.2.0.tar.gz -C "$data"
 ```
 
-Relaunch the app to use the Sofie and Mattias synthetic voices offline. No Azure
-account, key, SDK or network connection is needed for playback. Installing the
-archive selects the downloaded banks; previously prepared banks are retained.
+Relaunch the app to use the Sofie synthetic voice offline in Keyboard practice. No Azure
+account, key, SDK or network connection is needed for keyboard playback. Installing the
+archive selects the downloaded bank; previously prepared banks are retained.
 
 The app's MIT source license does not
 grant rights to Microsoft-generated recordings or Piper models. Microsoft's
@@ -495,7 +535,9 @@ without modifying the downloaded model. No engine or model is bundled in this pr
 
 - [src/lesson.rs](src/lesson.rs): curriculum and manual lesson state, with no GUI dependencies.
 - [src/main.rs](src/main.rs): native interface and input handling.
-- [src/speech.rs](src/speech.rs): one-time Azure/Piper preparation and asynchronous WAV playback.
+- [src/speech.rs](src/speech.rs): offline Azure/Piper preparation and asynchronous WAV playback.
+- [src/speech/azure.rs](src/speech/azure.rs): on-demand casting, requests, and session cache.
+- [scripts/live_azure_speech.py](scripts/live_azure_speech.py): multi-voice Azure synthesis and timing extraction.
 - [scripts/prepare_speech.py](scripts/prepare_speech.py): full-phrase neural audio and measured word timings; embedded into the Rust preparation command.
 - [scripts/prepare_azure_speech.py](scripts/prepare_azure_speech.py): hidden local credential prompt, Azure Sofie recordings and measured word boundaries; embedded into the Rust Azure preparation command.
 - [scripts/build_release.py](scripts/build_release.py): Ubuntu 26.04 `.deb`, tar archive and checksums from an explicit file allowlist, without generated speech or credentials.
@@ -511,6 +553,9 @@ cargo test --locked --no-default-features
 # Speech preparation regression test (using the speech-setup environment):
 "${XDG_DATA_HOME:-$HOME/.local/share}/learn-swedish/piper-env/bin/python" \
   -B -m unittest discover -s scripts -p 'test_prepare_speech.py'
+
+# Live story speech worker tests:
+python3 -B -m unittest discover -s scripts -p 'test_live_azure_speech.py'
 
 # Azure preparation tests: mocked synthesis, no key or cloud calls:
 "${XDG_DATA_HOME:-$HOME/.local/share}/learn-swedish/azure-env/bin/python" \

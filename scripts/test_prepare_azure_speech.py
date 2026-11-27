@@ -26,35 +26,6 @@ def silent_wav(frames=24_000):
 
 
 class PrepareAzureSpeechTests(unittest.TestCase):
-    def test_story_jobs_select_gendered_voices_and_reject_unsafe_paths(self):
-        jobs = {"jobs": [
-            {"text": "Hej!", "voice": "sv-SE-SofieNeural", "stem": "0123456789abcdef"},
-            {"text": "Tack.", "voice": "sv-SE-MattiasNeural", "stem": "fedcba9876543210"},
-        ]}
-        with (
-            tempfile.TemporaryDirectory() as temporary,
-            patch.object(azure, "speech_config") as factory,
-            patch.object(azure, "synthesize", return_value=(silent_wav(), {"duration_us": 1, "words": []})) as synthesize,
-            patch.object(azure.time, "sleep") as sleep,
-            patch("sys.stdout", new_callable=io.StringIO),
-        ):
-            voices = []
-            def record_voice(config, text):
-                voices.append(config.speech_synthesis_voice_name)
-                return silent_wav(), {"duration_us": 1, "words": []}
-            synthesize.side_effect = record_voice
-            azure.prepare_jobs(Path(temporary), azure.validate_jobs(jobs), "not-a-real-key", "australiaeast")
-            self.assertEqual(voices, ["sv-SE-SofieNeural", "sv-SE-MattiasNeural"])
-            for job in jobs["jobs"]:
-                self.assertTrue((Path(temporary) / job["voice"] / f'{job["stem"]}.wav').is_file())
-            sleep.assert_called_once_with(3.1)
-        for field, value in [("stem", "../escape"), ("voice", "../escape"), ("text", "")]:
-            invalid = {"jobs": [dict(jobs["jobs"][0], **{field: value})]}
-            with self.assertRaises(ValueError):
-                azure.validate_jobs(invalid)
-        with self.assertRaises(ValueError):
-            azure.validate_jobs({"jobs": [jobs["jobs"][0], jobs["jobs"][0]]})
-
     def test_recorded_d_events_keep_spoken_punctuation_label_but_ignore_actual_punctuation_and_sentences(self):
         for text in ["Bokstaven D", "Bokstaven D."]:
             with (

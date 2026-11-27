@@ -1,0 +1,124 @@
+shop-oats
+w|Till gröten ska vi ha vanliga havregryn, inte snabbgryn.|For porridge-the shall we have ordinary oat-flakes, not quick-flakes.|We want regular rolled oats for porridge, not instant oats.
+Var står de vanliga havregrynen? Jag behöver en påse.|Where stand the ordinary oat-flakes-the? I need one bag.|Where are the regular rolled oats? I need a bag.
+Där. Precis bredvid genvägen till gröt.|There. Just beside shortcut-the to porridge.|There, right next to the porridge shortcut.
+
+shop-coffee
+shop|Vi har samma kaffe som bönor eller bryggmalet.|We have same coffee as beans or brew-ground.|We have the same coffee as whole beans or ground for filter coffee.
+Bryggmalet, tack. Vi har ingen kvarn.|Brew-ground, please. We have no mill.|Ground for filter coffee, please. We don't have a grinder.
+På lördagar får någon annan mala.|On Saturdays gets someone else grind.|On Saturdays someone else can do the grinding.
+
+shop-crispbread
+w|Knäckebrödet ska få plats i plåtburken. Vi behöver det runda.|Crack-bread-the shall get room in tin-box-the. We need the round one.|The crispbread needs to fit in the tin. We need the round kind.
+Var finns det runda knäckebrödet? Jag vill köpa ett paket.|Where exists the round crack-bread-the? I want buy one pack.|Where's the round crispbread? I'd like to buy a pack.
+Fint. En möbel med bara ett mått.|Nice. A piece-of-furniture with only one measurement.|Lovely. Something with only one dimension to worry about.
+
+shop-beans
+shop|Svarta bönor finns både torkade och färdigkokta.|Black beans exist both dried and ready-boiled.|Black beans come dried or already cooked.
+Jag tar två burkar färdigkokta.|I take two cans ready-boiled ones.|I'll take two cans of the cooked ones.
+Då hinner vi äta innan söndag.|Then have time we eat before Sunday.|That way we'll eat before Sunday.
+
+shop-pasta
+w|Vi har spaghetti hemma. Till salladen vill jag ha pastaskruvar.|We have spaghetti at home. For salad-the want I have pasta-screws.|We have spaghetti at home. I'd like pasta spirals for the salad.
+Jag tar ett paket pastaskruvar.|I take a packet pasta-screws.|I'll take a packet of pasta spirals.
+Fusilli. Precis den sortens skruvar vi behöver.|Fusilli. Just that kind-the’s screws we need.|Fusilli. Exactly the kind of screws we need.
+
+shop-rice
+shop|Det stora rispaketet väger fem kilo. Det lilla väger ett.|The big rice-packet-the weighs five kilos. The small one weighs one.|The large bag of rice weighs five kilos. The small one weighs one.
+Ett kilo jasminris räcker för oss.|One kilo jasmine-rice suffices for us.|A kilo of jasmine rice is enough for us.
+Vardagsmiddag, inte beredskapslager.|Everyday-dinner, not emergency-stockpile.|Dinner for a weekday, not a stockpile.
+
+shop-tea
+w|Vill du ha något varmt i kväll? Vi har inget pepparmyntste kvar.|Want you have something warm tonight? We have no peppermint-tea left.|Fancy a hot drink tonight? We're out of peppermint tea.
+Vet du var pepparmyntsteet står? Jag tar gärna ett paket.|Know you where peppermint-tea-the stands? I take gladly one pack.|Do you know where the peppermint tea is? I'd like a box.
+Ja, trots att det gömmer sig längst ner.|Yes, despite that it hides itself farthest down.|Yes, even though it's hiding on the bottom shelf.
+
+shop-chickpeas
+w|Där står kikärtorna. Vi behöver två burkar till hummusen.|There stand chickpeas-the. We need two cans for hummus-the.|There are the chickpeas. We need two cans for the hummus.
+Jag tar två burkar kikärtor.|I take two cans chickpeas.|I'll take two cans of chickpeas.
+Nu är mixern förvarnad.|Now is blender-the forewarned.|The blender has been warned.
+
+shop-oil
+shop|Rapsoljan finns på hyllan ovanför vinägern.|Rapeseed-oil-the exists on shelf-the above vinegar-the.|The rapeseed oil is on the shelf above the vinegar.
+Då tar jag en liten flaska rapsolja.|Then take I one small bottle rapeseed-oil.|I'll take a small bottle of rapeseed oil, then.
+Tack. En liter räcker längre än mitt minne.|Thanks. One litre lasts longer than my memory.|Thanks. A whole litre would outlast my memory.
+
+shop-mustard
+w|Till korven vill jag ha grovkornig senap.|With sausage-the want I have coarse-grained mustard.|I'd like wholegrain mustard with the sausages.
+Jag tar en burk grovkornig senap.|I take one jar coarse-grained mustard.|I'll take a jar of wholegrain mustard.
+Bra. Senapen får gärna ha lite tuggmotstånd.|Good. Mustard-the may gladly have a little chew-resistance.|Good. I like my mustard with a bit of texture.
+
+shop-jam
+shop|Lingonsylten med mindre socker har blått lock.|Lingonberry-jam-the with less sugar has blue lid.|The lower-sugar lingonberry jam has a blue lid.
+Den med blått lock, tack.|The one with blue lid, please.|The one with the blue lid, please.
+Den får följa med pannkakorna hem.|It gets come along with pancakes-the home.|It can come home with the pancakes.
+
+shop-stock
+w|Soppan behöver grönsaksbuljong. Har du sett tärningarna?|Soup-the needs vegetable-stock. Have you seen cubes-the?|The soup needs vegetable stock. Have you seen the cubes?
+Ja, jag tar ett paket grönsaksbuljong.|Yes, I take a packet vegetable-stock.|Yes, I'll take a packet of vegetable stock.
+Hela trädgården i en liten kub.|Whole garden-the in a little cube.|An entire garden in one little cube.
+
+shop-tortillas
+shop|De små tortillabröden är slut. De stora kostar lika mycket.|The small tortilla-breads-the are at an end. The big ones cost equally much.|The small tortillas are sold out. The large ones cost the same.
+Då går det bra med ett paket stora.|Then goes it well with one pack large ones.|One pack of the large ones will be fine, then.
+Tacos med extra utrymme för misstag.|Tacos with extra space for mistakes.|Tacos with extra room for mistakes.
+
+shop-flour
+w|Receptet säger rågmjöl. Vi har bara vetemjöl hemma.|Recipe-the says rye-flour. We have only wheat-flour at home.|The recipe calls for rye flour. We only have wheat flour at home.
+Jag tar en påse rågmjöl.|I take a bag rye-flour.|I'll take a bag of rye flour.
+Nu kan brödet få lite mer karaktär.|Now can bread-the get a little more character.|Now the bread can have a little more character.
+
+shop-nuts
+shop|Cashewnötterna finns osaltade på hyllan under de saltade.|Cashew-nuts-the exist unsalted on shelf-the below the salted ones.|The unsalted cashews are on the shelf below the salted ones.
+Jag tar en påse osaltade cashewnötter.|I take a bag unsalted cashew-nuts.|I'll take a bag of unsalted cashews.
+Bra. Vi bestämmer hur salt såsen blir.|Good. We decide how salty sauce-the becomes.|Good. We get to decide how salty the sauce is.
+
+shop-sardines
+w|Sardinerna finns i tomatsås och i olja. Jag vill ha dem i olja.|Sardines-the exist in tomato-sauce and in oil. I want have them in oil.|The sardines come in tomato sauce or oil. I'd like the ones in oil.
+En burk sardiner i olja får det bli.|One tin sardines in oil gets it become.|One tin of sardines in oil it is.
+Katten kommer att få upp vittringen.|Cat-the comes to pick up scent-the.|The cat will get wind of this.
+
+shop-vinegar
+w|Vi ska lägga in gurka. Leta efter ättiksprit, tolv procent.|We shall put in cucumber. Look for vinegar-spirit, twelve percent.|We're pickling cucumber. Look for twelve-percent vinegar.
+Jag tar flaskan med tolv procent.|I take bottle-the with twelve percent.|I'll take the twelve-percent bottle.
+Bra. Det blir gurka med lite bett.|Good. There becomes cucumber with a little bite.|Good. The cucumber will have a little bite.
+
+shop-crushed-tomatoes
+shop|Hela tomater står högst upp. Krossade står under dem.|Whole tomatoes stand highest up. Crushed ones stand under them.|Whole tomatoes are at the top. Crushed tomatoes are underneath.
+Två burkar krossade tomater, tack.|Two cans crushed tomatoes, please.|Two cans of crushed tomatoes, please.
+Perfekt. Vi behöver inte krossa någons drömmar.|Perfect. We need not crush anyone’s dreams.|Perfect. No need to crush anyone's dreams.
+
+shop-noodles
+w|De där nudlarna har chilipulver i påsen. Vi vill ha milda.|Those there noodles-the have chilli-powder in bag-the. We want have mild ones.|Those noodles have chilli powder in the packet. We want mild ones.
+Finns det en mildare sort? Jag tar gärna två paket.|Exists there a milder kind? I take gladly two packs.|Is there a milder kind? I'd like two packets.
+Ja. Svetten sparar vi till promenaden.|Yes. Sweat-the save we for walk-the.|Yes. We'll save the sweating for the walk.
+
+shop-lentils
+w|Röda linser kokar sönder i soppan. Det är precis vad vi vill.|Red lentils boil apart in soup-the. It is exactly what we want.|Red lentils break down in the soup. That's exactly what we want.
+Då köper jag en påse röda linser.|Then buy I one bag red lentils.|Then I'll buy a bag of red lentils.
+Skönt när sönderkokt är planen.|Nice when boiled-apart is plan-the.|Nice when overcooking is the plan.
+
+shop-chocolate
+shop|Bakchokladen finns som mörk och ljus. Vilken vill du ha?|Baking-chocolate-the exists as dark and light. Which want you have?|There's dark or milk baking chocolate. Which would you like?
+Jag tar den mörka till kladdkakan.|I take the dark one for sticky-cake-the.|I'll take the dark one for the gooey chocolate cake.
+Kakan får gärna vara kladdig. Bara inte kvittot.|Cake-the may gladly be sticky. Only not receipt-the.|The cake can be as sticky as it likes. Keep the receipt clean.
+
+shop-pickles
+w|Saltgurkan och smörgåsgurkan ser likadana ut. Välj den söta till mackorna.|Salt-cucumber-the and sandwich-cucumber-the look alike. Choose the sweet one for sandwiches-the.|Dill pickles and sandwich pickles look alike. Get the sweet ones for the sandwiches.
+Jag tar smörgåsgurkan.|I take sandwich-cucumber-the.|I'll take the sweet sandwich pickles.
+Precis. De har olika uppdrag.|Exactly. They have different missions.|Exactly. They're on different missions.
+
+shop-coconut
+shop|Kokosmjölken finns på andra sidan gången, bredvid currypastan.|Coconut-milk-the exists on other side-the of aisle-the, beside curry-paste-the.|The coconut milk is across the aisle, next to the curry paste.
+Tack. Jag behöver två burkar kokosmjölk.|Thanks. I need two cans coconut-milk.|Thanks. I need two cans of coconut milk.
+Då slipper grytan bli för stark.|Then escapes stew-the becoming too strong.|That'll keep the curry from getting too hot.
+
+shop-cardamom
+w|Malda kardemumman är slut. Vi har en mortel hemma.|Ground cardamom-the is at an end. We have a mortar at home.|The ground cardamom is sold out. We've got a mortar at home.
+Då tar jag hela kardemummakärnor.|Then take I whole cardamom-seeds.|Then I'll get whole cardamom seeds.
+Nu får bullarna ett eget trumsolo.|Now get buns-the their own drum-solo.|Now the buns get a drum solo of their own.
+
+shop-honey
+w|Flytande honung går lättare att ringla över yoghurten.|Runny honey goes more easily to drizzle over yoghurt-the.|Runny honey is easier to drizzle over yoghurt.
+Jag tar en flaska flytande honung.|I take a bottle runny honey.|I'll take a bottle of runny honey.
+Bra. Skeden behöver inte brottas med den.|Good. Spoon-the needs not wrestle with it.|Good. The spoon won't have to wrestle with it.

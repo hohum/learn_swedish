@@ -17,6 +17,7 @@ pub struct Card {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Phrase {
     pub english: String,
+    pub literal: Option<&'static str>,
     pub swedish: String,
     pub voice: Option<Voice>,
     pub speaker: Option<&'static str>,
@@ -26,6 +27,7 @@ pub struct Phrase {
 pub enum Voice {
     Sofie,
     Mattias,
+    Hillevi,
 }
 
 impl Voice {
@@ -33,6 +35,7 @@ impl Voice {
         match self {
             Self::Sofie => "sv-SE-SofieNeural",
             Self::Mattias => "sv-SE-MattiasNeural",
+            Self::Hillevi => "sv-SE-HilleviNeural",
         }
     }
 }
@@ -58,6 +61,7 @@ impl From<Card> for Phrase {
     fn from(card: Card) -> Self {
         Self {
             english: card.english,
+            literal: None,
             swedish: card.swedish,
             voice: None,
             speaker: None,
@@ -135,6 +139,7 @@ pub fn wait_phrase(choice: usize) -> Phrase {
     let (english, swedish) = WAIT_PHRASES[choice % WAIT_PHRASES.len()];
     Phrase {
         english: english.into(),
+        literal: None,
         swedish: swedish.into(),
         voice: None,
         speaker: None,
@@ -149,6 +154,7 @@ pub fn next_phrase(choice: usize) -> Phrase {
     let (english, swedish) = NEXT_PHRASES[choice % NEXT_PHRASES.len()];
     Phrase {
         english: english.into(),
+        literal: None,
         swedish: swedish.into(),
         voice: None,
         speaker: None,
@@ -172,6 +178,7 @@ pub fn feedback_phrase(correct: bool, choice: usize) -> Phrase {
     let (english, swedish) = choices[choice % choices.len()];
     Phrase {
         english: english.into(),
+        literal: None,
         swedish: swedish.into(),
         voice: None,
         speaker: None,
@@ -188,6 +195,7 @@ pub fn speech_phrases() -> Vec<Phrase> {
             .chain(WAIT_PHRASES)
             .map(|(english, swedish)| Phrase {
                 english: (*english).into(),
+                literal: None,
                 swedish: (*swedish).into(),
                 voice: None,
                 speaker: None,

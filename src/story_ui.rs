@@ -1,6 +1,6 @@
 use crate::speech::Speech;
 use adw::{glib, gtk, prelude::*};
-use learn_swedish::adventure::{Book, Scene};
+use learn_swedish::adventure::{Book, FAREWELL, Scene};
 use learn_swedish::lesson::Phrase;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -12,6 +12,8 @@ struct Reader {
     illustration: gtk::DrawingArea,
     scene: Rc<Cell<Scene>>,
     transcript: gtk::Label,
+    text_scroll: gtk::ScrolledWindow,
+    choice_scroll: gtk::ScrolledWindow,
     choices: [gtk::Button; 4],
     entry: gtk::Entry,
     submit: gtk::Button,
@@ -23,6 +25,10 @@ struct Reader {
     pause_sentences: gtk::CheckButton,
     replay: gtk::Button,
     speaking: Cell<bool>,
+}
+
+fn random_index(upper: usize) -> usize {
+    glib::random_int_range(0, i32::try_from(upper).expect("Story choices fit in i32")) as usize
 }
 
 impl Reader {
@@ -41,11 +47,15 @@ impl Reader {
         let answering = !self.speaking.get() && book.selected.is_none() && !book.finished;
         self.entry.set_sensitive(answering);
         self.submit.set_sensitive(answering);
+        self.entry.set_visible(!book.finished);
+        self.submit.set_visible(!book.finished);
+        self.skip.set_visible(!book.finished);
+        self.choice_scroll.set_visible(!book.finished);
         for choice in &self.choices {
             choice.set_sensitive(answering);
         }
         self.next
-            .set_sensitive(!self.speaking.get() && book.selected.is_some());
+            .set_sensitive(!self.speaking.get() && (book.finished || book.selected.is_some()));
         self.skip.set_sensitive(!book.finished);
         self.replay.set_sensitive(!book.finished);
     }
@@ -98,44 +108,21 @@ impl Reader {
         self.speech.stop();
         self.speech.clear_last_sentence();
         self.entry.set_text("");
+        self.text_scroll.vadjustment().set_value(0.0);
+        self.choice_scroll.vadjustment().set_value(0.0);
         let book = self.book.borrow();
         self.scene.set(book.page().scene);
         self.illustration.queue_draw();
         if book.finished {
             self.title.set_label("Hemma igen · Slut");
-            self.speech.show_transcript(
-                &[learn_swedish::adventure::Line {
-                    actor: learn_swedish::adventure::Actor::Wife,
-                    swedish: "Tack själv. Nästa gång får du välja ett nytt äventyr.",
-                    english: "Thank you too. Next time you can choose a new adventure.",
-                }
-                .phrase()],
-                &self.transcript,
+            self.speech
+                .show_transcript(&[FAREWELL.phrase()], &self.transcript);
+            self.next.set_label("Ny utflykt · New outing");
+            self.status.set_label(
+                "You are home again. Choose New outing to pick a destination for next Saturday.",
             );
-            self.status
-                .set_label("You are home again. Restart the book to try another outing.");
         } else {
-            self.title.set_label(book.page().title);
-            for (index, (button, choice)) in
-                self.choices.iter().zip(&book.page().choices).enumerate()
-            {
-                let text = if self.english.is_active() {
-                    format!(
-                        "{}. {}\n{}",
-                        index + 1,
-                        choice.line.swedish,
-                        choice.line.english
-                    )
-                } else {
-                    format!("{}. {}", index + 1, choice.line.swedish)
-                };
-                button
-                    .child()
-                    .unwrap()
-                    .downcast::<gtk::Label>()
-                    .unwrap()
-                    .set_label(&text);
-            }
+            self.title.set_label(book.page().title.swedish);
             self.next.set_label(
                 if book
                     .selected
@@ -149,18 +136,47 @@ impl Reader {
         }
         let finished = book.finished;
         drop(book);
+        self.show_choices();
         self.controls();
         if !finished {
             self.speech
                 .show_transcript(&self.phrases(), &self.transcript);
-            if self.automatic.is_active() {
+            if self.automatic.is_active() && self.speech.azure_enabled() {
                 self.speak();
-            } else {
+            } else if self.speech.azure_enabled() {
                 self.status.set_label(if self.book.borrow().selected.is_some() {
                     "Read the reply, then use Continue or Try again. Replay reads the exchange aloud."
                 } else {
                     "Choose 1–4 or type a full Swedish response. Replay reads this page aloud."
                 });
+            } else {
+                self.status.set_label(if self.book.borrow().selected.is_some() {
+                    "Read the reply, then use Continue or Try again. Open Azure Speech above for live audio."
+                } else {
+                    "Choose 1–4 or type a full Swedish response. Open Azure Speech above for live audio."
+                });
+            }
+        }
+    }
+
+    fn show_choices(&self) {
+        for (index, (button, choice)) in self
+            .choices
+            .iter()
+            .zip(&self.book.borrow().page().choices)
+            .enumerate()
+        {
+            let label = button.child().unwrap().downcast::<gtk::Label>().unwrap();
+            let text = format!("{}. {}", index + 1, choice.line.swedish);
+            if self.english.is_active() {
+                label.set_markup(&format!(
+                    "{}\n<span size=\"small\" style=\"italic\">{}</span>\n<span size=\"small\">{}</span>",
+                    glib::markup_escape_text(&text),
+                    glib::markup_escape_text(choice.line.literal),
+                    glib::markup_escape_text(choice.line.english),
+                ));
+            } else {
+                label.set_text(&text);
             }
         }
     }
@@ -173,6 +189,20 @@ impl Reader {
         match result {
             Ok(_) => self.show(),
             Err(error) => self.status.set_label(error),
+        }
+    }
+
+    fn update_speech_source(self: &Rc<Self>) {
+        self.speech.stop();
+        if self.automatic.is_active() && self.speech.azure_enabled() && !self.book.borrow().finished
+        {
+            self.speak();
+        } else {
+            self.status.set_label(if self.speech.azure_enabled() {
+                "Live Azure Speech is enabled. Use Replay to hear this page."
+            } else {
+                "Live Azure Speech is off. Story continues in text mode."
+            });
         }
     }
 }
@@ -201,6 +231,10 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
     let back = gtk::Button::with_label("Meny · Menu");
     back.set_widget_name("activity-menu");
     header.pack_start(&back);
+    let azure = gtk::Button::with_label("Azure Speech");
+    azure.set_widget_name("azure-settings");
+    azure.set_tooltip_text(Some("Set up live story audio"));
+    header.pack_end(&azure);
     content.append(&header);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
     body.set_margin_start(14);
@@ -273,6 +307,9 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
     body.append(&columns);
     let options = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let english = gtk::CheckButton::with_label("Show English hints");
+    english.set_tooltip_text(Some(
+        "Show literal English in italics, followed by natural English",
+    ));
     let automatic = gtk::CheckButton::with_label("Read aloud");
     automatic.set_active(true);
     let pause_sentences = gtk::CheckButton::with_label("Pause after each sentence");
@@ -308,12 +345,14 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         .content(&content)
         .build();
     let reader = Rc::new(Reader {
-        book: RefCell::new(Book::default()),
+        book: RefCell::new(Book::randomized(random_index)),
         speech,
         title,
         illustration,
         scene,
         transcript,
+        text_scroll,
+        choice_scroll,
         choices,
         entry,
         submit,
@@ -326,6 +365,13 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         replay,
         speaking: Cell::new(false),
     });
+    azure.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        window,
+        move |_| show_azure_settings(&reader, &window)
+    ));
     let playback_keys = gtk::EventControllerKey::new();
     playback_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     playback_keys.connect_key_pressed(glib::clone!(
@@ -395,7 +441,15 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         #[weak]
         reader,
         move |_| {
-            reader.book.borrow_mut().continue_story();
+            {
+                let mut book = reader.book.borrow_mut();
+                if book.finished {
+                    book.new_outing(random_index);
+                    reader.speech.recast_guests();
+                } else {
+                    book.continue_story();
+                }
+            }
             reader.show();
         }
     ));
@@ -408,7 +462,8 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         #[weak]
         reader,
         move |_| {
-            reader.book.replace(Book::default());
+            reader.book.borrow_mut().restart(random_index);
+            reader.speech.recast_guests();
             reader.show();
         }
     ));
@@ -431,27 +486,7 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         reader,
         move |toggle| {
             reader.speech.set_show_english(toggle.is_active());
-            let book = reader.book.borrow();
-            for (index, (button, choice)) in
-                reader.choices.iter().zip(&book.page().choices).enumerate()
-            {
-                let text = if toggle.is_active() {
-                    format!(
-                        "{}. {}\n{}",
-                        index + 1,
-                        choice.line.swedish,
-                        choice.line.english
-                    )
-                } else {
-                    format!("{}. {}", index + 1, choice.line.swedish)
-                };
-                button
-                    .child()
-                    .unwrap()
-                    .downcast::<gtk::Label>()
-                    .unwrap()
-                    .set_label(&text);
-            }
+            reader.show_choices();
         }
     ));
     window.connect_close_request({
@@ -462,6 +497,101 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         }
     });
     (window, reader)
+}
+
+fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
+    let live = reader.speech.azure_enabled();
+    let dialog = gtk::Window::builder()
+        .title("Live Azure Speech")
+        .transient_for(window)
+        .modal(true)
+        .resizable(false)
+        .default_width(400)
+        .build();
+    let fields = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    fields.set_margin_top(16);
+    fields.set_margin_bottom(16);
+    fields.set_margin_start(16);
+    fields.set_margin_end(16);
+    let explanation = gtk::Label::new(Some(
+        "Azure receives the authored Swedish lines you play. The app keeps the key for this session.",
+    ));
+    explanation.set_wrap(true);
+    explanation.set_xalign(0.0);
+    fields.append(&explanation);
+    let region = gtk::Entry::builder()
+        .placeholder_text("Azure resource region")
+        .text(reader.speech.azure_region())
+        .build();
+    let key = gtk::PasswordEntry::builder()
+        .placeholder_text(if live {
+            "Leave blank to keep the current key"
+        } else {
+            "Azure Speech key"
+        })
+        .build();
+    let region_label = gtk::Label::new(Some("Resource region"));
+    let key_label = gtk::Label::new(Some("Speech key"));
+    for label in [&region_label, &key_label] {
+        label.set_xalign(0.0);
+    }
+    fields.append(&region_label);
+    fields.append(&region);
+    fields.append(&key_label);
+    fields.append(&key);
+    let error = gtk::Label::new(None);
+    error.set_wrap(true);
+    error.set_xalign(0.0);
+    error.add_css_class("error");
+    error.set_visible(false);
+    fields.append(&error);
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_halign(gtk::Align::End);
+    let cancel = gtk::Button::with_label("Cancel");
+    actions.append(&cancel);
+    if live {
+        let disable = gtk::Button::with_label("Turn off speech");
+        actions.append(&disable);
+        disable.connect_clicked(glib::clone!(
+            #[weak]
+            reader,
+            #[weak]
+            dialog,
+            move |_| {
+                reader.speech.disable_azure();
+                dialog.close();
+                reader.update_speech_source();
+            }
+        ));
+    }
+    let connect = gtk::Button::with_label("Use live speech");
+    connect.add_css_class("suggested-action");
+    actions.append(&connect);
+    fields.append(&actions);
+    dialog.set_child(Some(&fields));
+    dialog.set_default_widget(Some(&connect));
+    cancel.connect_clicked(glib::clone!(
+        #[weak]
+        dialog,
+        move |_| dialog.close()
+    ));
+    connect.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        dialog,
+        move |_| {
+            if let Err(message) = reader.speech.configure_azure(&region.text(), &key.text()) {
+                error.set_label(message);
+                error.set_visible(true);
+                return;
+            }
+            key.set_text("");
+            dialog.close();
+            reader.update_speech_source();
+        }
+    ));
+    dialog.present();
 }
 
 fn draw_scene(cr: &gtk::cairo::Context, width: i32, height: i32, scene: Scene) {
@@ -564,41 +694,51 @@ fn draw_scene(cr: &gtk::cairo::Context, width: i32, height: i32, scene: Scene) {
 }
 
 #[cfg(test)]
-pub fn test_flow(app: &adw::Application, wav: &[u8]) {
+pub fn test_flow(app: &adw::Application) {
     use std::collections::HashSet;
-    use std::fs;
     use std::time::{Duration, Instant};
-    let directory =
-        std::env::temp_dir().join(format!("swedish-book-test-{}", glib::uuid_string_random()));
-    fs::create_dir(&directory).unwrap();
-    let book = Book::default();
-    let mut phrases = book.page().phrases();
-    phrases.extend(
-        book.page()
-            .choices
-            .iter()
-            .map(|choice| choice.reply.phrase()),
-    );
-    for phrase in &phrases {
-        let folder = directory.join(phrase.voice.unwrap().azure_name());
-        fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join(format!("{}.wav", phrase.audio_stem())), wav).unwrap();
-        let words: Vec<_> = phrase.swedish.split_whitespace().collect();
-        let timings: Vec<_> = words.iter().enumerate().map(|(index, word)| {
-            serde_json::json!({"word": word, "start_us": index * 500_000 / words.len(), "end_us": (index + 1) * 500_000 / words.len()})
-        }).collect();
-        fs::write(
-            folder.join(format!("{}.json", phrase.audio_stem())),
-            serde_json::to_vec(&serde_json::json!({"duration_us": 500_000, "words": timings}))
-                .unwrap(),
-        )
-        .unwrap();
-    }
-    let (window, reader) = build(app, Rc::new(Speech::for_story_test(directory.clone())));
+
+    const MOCK_WORKER: &str = r#"
+import json, sys, time, wave
+from pathlib import Path
+output = Path(sys.argv[1])
+request = json.load(sys.stdin.buffer)
+assert len(sys.argv) == 2 and request["key"] == "test-key"
+time.sleep(0.15)
+for i, line in enumerate(request["lines"]):
+    with wave.open(str(output / f"{i}.wav"), "wb") as wav:
+        wav.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
+        wav.writeframes(bytes(2 * 12000))
+    words = line["text"].split()
+    timings = [
+        {"word": word, "start_us": n * 500000 // len(words), "end_us": (n + 1) * 500000 // len(words)}
+        for n, word in enumerate(words)
+    ]
+    starts = [0] + [
+        timings[idx]["start_us"]
+        for idx in range(1, len(words))
+        if words[idx - 1].rstrip("\"'.)]»”’") != words[idx - 1] and words[idx - 1].rstrip("\"')]»”’").endswith((".", "!", "?"))
+    ]
+    metadata = {"duration_us": 500000, "sentence_starts_us": starts, "words": timings}
+    (output / f"{i}.json").write_text(json.dumps(metadata), encoding="utf-8")
+print("ok")
+"#;
+
+    let (window, reader) = build(app, Rc::new(Speech::for_live_test(MOCK_WORKER)));
     assert!(reader.pause_sentences.is_active());
-    reader.automatic.set_active(false);
+    assert!(reader.automatic.is_active());
     window.present();
     reader.show();
+    // Without Azure credentials, Story starts cleanly in text mode with controls unlocked.
+    assert!(!reader.speaking.get());
+    assert!(reader.entry.is_sensitive());
+    assert!(reader.status.text().contains("Azure Speech"));
+    reader.replay.emit_clicked();
+    assert!(!reader.speaking.get());
+    assert!(reader.entry.is_sensitive());
+    assert!(reader.status.text().contains("Azure Speech"));
+
+    reader.automatic.set_active(false);
     let context = glib::MainContext::default();
     let deadline = Instant::now() + Duration::from_secs(2);
     while (window.width() == 0 || window.height() == 0) && Instant::now() < deadline {
@@ -638,15 +778,27 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
     }
     assert!(!reader.transcript.text().contains("It is Saturday"));
     reader.english.set_active(true);
-    assert!(reader.transcript.text().contains("It is Saturday"));
+    assert!(reader.transcript.text().contains(
+        "Det är lördag. Du och din fru står i köket och planerar dagen.\n\
+         It is Saturday. You and your wife stand in kitchen-the and plan day-the.\n\
+         It is Saturday. You and your wife are in the kitchen planning the day."
+    ));
+    let first_choice = reader.choices[0]
+        .child()
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
+    assert_eq!(first_choice.text().lines().count(), 3);
     reader.english.set_active(false);
+    assert_eq!(first_choice.text().lines().count(), 1);
     let window_keys = (0..window.observe_controllers().n_items())
         .filter_map(|index| window.observe_controllers().item(index))
         .filter_map(|controller| controller.downcast::<gtk::EventControllerKey>().ok())
         .find(|controller| controller.propagation_phase() == gtk::PropagationPhase::Capture)
         .unwrap();
     let wait_until_paused = |reader: &Reader| {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(6);
+        let mut highlighted = false;
         while !reader.speech.is_paused() {
             assert!(
                 Instant::now() < deadline,
@@ -654,14 +806,42 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
                 reader.status.text()
             );
             context.iteration(false);
+            highlighted |= reader.transcript.label().contains("background=");
             std::thread::sleep(Duration::from_millis(5));
         }
+        highlighted
     };
+
+    reader
+        .speech
+        .configure_azure("australiaeast", "test-key")
+        .unwrap();
     reader.speak();
+    assert!(
+        reader
+            .status
+            .text()
+            .contains("Getting Swedish audio from Azure")
+    );
     assert!(!reader.entry.is_sensitive());
     assert!(reader.skip.is_sensitive());
-    wait_until_paused(&reader);
+    assert!(wait_until_paused(&reader));
+    assert_eq!(
+        reader.transcript.tooltip_text().as_deref(),
+        Some("Speech voice: sv-SE-MattiasNeural · Azure live")
+    );
     assert!(reader.status.text().contains("Paused after sentence"));
+
+    // Replay must use the session cache immediately, without launching another worker.
+    reader.speech.stop();
+    reader.speak();
+    assert!(
+        reader
+            .status
+            .text()
+            .starts_with("Speaking Swedish: En lagom äventyrlig lördag")
+    );
+    wait_until_paused(&reader);
     assert!(window_keys.emit_by_name::<bool>(
         "key-pressed",
         &[
@@ -733,8 +913,8 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
     );
     assert!(highlighted);
     assert!(
-        voices.contains("Speech voice: sv-SE-SofieNeural")
-            && voices.contains("Speech voice: sv-SE-MattiasNeural")
+        voices.contains("Speech voice: sv-SE-SofieNeural · Azure live")
+            && voices.contains("Speech voice: sv-SE-MattiasNeural · Azure live")
     );
     assert!(reader.entry.is_sensitive());
     assert!(!window_keys.emit_by_name::<bool>(
@@ -802,22 +982,42 @@ pub fn test_flow(app: &adw::Application, wav: &[u8]) {
     reader.entry.emit_activate();
     reader.next.emit_clicked();
     assert_eq!(reader.book.borrow().page().id, "home-keys");
+    // Skipping cancels an in-flight Azure synthesis request and unlocks the next page.
+    reader.speak();
+    assert!(
+        reader
+            .status
+            .text()
+            .contains("Getting Swedish audio from Azure")
+    );
     reader.skip.emit_clicked();
     assert_eq!(reader.book.borrow().page().id, "home-plan");
+    assert!(reader.entry.is_sensitive());
+    reader.speech.disable_azure();
     reader.automatic.set_active(true);
+    reader.show();
     assert!(
         !reader.speaking.get(),
-        "Missing audio must release the controls"
+        "Disabling live speech must keep story controls unlocked in text mode"
     );
     assert!(reader.entry.is_sensitive());
-    assert!(reader.status.text().contains("Speech audio is missing"));
-    window.close();
-    for voice in fs::read_dir(&directory).unwrap() {
-        let folder = voice.unwrap().path();
-        for file in fs::read_dir(&folder).unwrap() {
-            fs::remove_file(file.unwrap().path()).unwrap();
-        }
-        fs::remove_dir(folder).unwrap();
+    reader.automatic.set_active(false);
+    reader.answer("Vi går till Willys och handlar.");
+    reader.next.emit_clicked();
+    assert_eq!(reader.book.borrow().page().id, "shop-list");
+    reader.skip.emit_clicked();
+    assert_eq!(
+        reader.book.borrow().page().title.swedish,
+        "Något mer på listan"
+    );
+    while !reader.book.borrow().finished {
+        reader.skip.emit_clicked();
     }
-    fs::remove_dir(directory).unwrap();
+    assert_eq!(
+        reader.next.label().as_deref(),
+        Some("Ny utflykt · New outing")
+    );
+    reader.next.emit_clicked();
+    assert_eq!(reader.book.borrow().page().id, "home-plan");
+    window.close();
 }

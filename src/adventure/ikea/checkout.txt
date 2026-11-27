@@ -1,0 +1,124 @@
+ikea-barcode
+shop|Streckkoden sitter på undersidan av kartongen.|Bar-code-the sits on underside-the of carton-the.|The barcode's on the underside of the box.
+Jag vrider paketet så att du kommer åt.|I turn package-the so that you come at.|I'll turn the box so you can reach it.
+Hyllan får göra ett halvt varv redan nu.|Shelf-the gets do half a turn already now.|The shelf gets to do a half turn already.
+
+ikea-flat-trolley
+w|Vagnen drar åt vänster. Det står en tom bredvid pelaren.|Trolley-the pulls to left. There stands an empty one beside pillar-the.|The trolley pulls to the left. There's an empty one by the pillar.
+Vi byter vagn innan vi ställer oss i kön.|We change trolley before we place ourselves in queue-the.|Let's swap trolleys before we get in line.
+Den gamla fick i alla fall välja riktning själv.|The old one got in any case choose direction itself.|At least the old one got to choose its own direction.
+
+ikea-queue
+shop|Kassan längst bort har precis öppnat.|Checkout-the farthest away has just opened.|The far checkout has just opened.
+Tack, vi går dit med vagnen.|Thanks, we go there with trolley-the.|Thanks, we'll take the trolley over there.
+Se där. En kö som tog slut innan den började.|See there. A queue that took end before it began.|Look at that. A queue that ended before it started.
+
+ikea-card
+shop|Vill ni betala med kort eller kontant i den här kassan?|Want you [plural] pay with card or cash in this here checkout-the?|Would you like to pay by card or cash at this checkout?
+Med kort, tack.|With card, please.|By card, please.
+Två ord räcker ibland hela vägen till kvittot.|Two words suffice sometimes whole way-the to receipt-the.|Sometimes two words get you all the way to the receipt.
+
+ikea-two-boxes
+shop|På etiketten står det ett av två. Har ni båda paketen?|On label-the stands it one of two. Have you [plural] both packages-the?|The label says one of two. Do you have both boxes?
+Nej, då behöver vi hämta paket nummer två.|No, then need we fetch package number two.|No, then we need to get box number two.
+Tur. En halv hylla är svår att möblera med.|Luck. Half a shelf is hard to furnish with.|Good catch. Half a shelf is hard to furnish with.
+
+ikea-dented
+w|Kartongen är intryckt i ena hörnet. Ska vi visa personalen?|Carton-the is pressed-in in one corner-the. Shall we show staff-the?|One corner of the box is dented. Shall we show the staff?
+Ja, vi frågar om det finns ett oskadat paket.|Yes, we ask if there exists an undamaged package.|Yes, let's ask if there's a box that isn't damaged.
+Hyllan behöver inte börja livet med ett blåmärke.|Shelf-the needs not begin life-the with a bruise.|The shelf doesn't need to start life with a bruise.
+
+ikea-receipt
+shop|Vill du ha ett papperskvitto eller räcker det digitala?|Want you have a paper-receipt or suffices the digital one?|Would you like a paper receipt, or is digital enough?
+Ett papperskvitto, tack.|A paper-receipt, please.|A paper receipt, please.
+Lägg det där vi faktiskt hittar det igen.|Lay it where we actually find it again.|Put it somewhere we'll actually find it again.
+
+ikea-price
+w|Priset på skärmen är högre än det vi såg på hyllan.|Price-the on screen-the is higher than that which we saw on shelf-the.|The price on the screen is higher than the one we saw on the shelf.
+Ursäkta, kan du kontrollera priset?|Excuse [me], can you check price-the?|Excuse me, could you check the price?
+Bra. Vi kan fråga utan att hålla ett tal.|Good. We can ask without holding a speech.|Good. We can ask without giving a speech.
+
+ikea-hotdog
+w|Kiosken är öppen. Vill du ha en korv med bröd till hunden som sitter i din mage?|Kiosk-the is open. Want you have a sausage with bread for dog-the that sits in your stomach?|The snack bar's open. Fancy a hot dog for the dog growling in your stomach?
+En korv med bröd och senap, tack.|One sausage with bread and mustard, please.|A hot dog with mustard, please.
+Bra. Nu kanske magen slutar skälla.|Good. Now maybe stops stomach-the barking.|Good. Maybe your stomach will stop barking now.
+
+ikea-ice
+cafe|Mjukglassen kan serveras i bägare eller strut.|Soft-ice-cream-the can be served in cup or cone.|The soft serve comes in a cup or a cone.
+En bägare, tack. Jag vill ha en sked.|A cup, please. I want have a spoon.|A cup, please. I'd like a spoon.
+En glass som inte kräver balansövningar.|An ice-cream that not requires balance-exercises.|Ice cream without a balance exercise.
+
+ikea-tray
+cafe|Ställ brickan på den översta lediga hyllan, tack.|Put tray-the on the highest free shelf-the, please.|Put the tray on the highest free shelf, please.
+Javisst, jag ställer den här uppe.|Of course, I put it here up.|Of course. I'll put it up here.
+Det blev dagens näst viktigaste hylla.|It became day-the’s second most important shelf.|That turned out to be today's second most important shelf.
+
+ikea-exit-only
+w|Där står det nödutgång. Den vanliga utgången är rakt fram.|There stands it emergency-exit. The usual exit-the is straight ahead.|That says emergency exit. The regular exit is straight ahead.
+Då fortsätter vi rakt fram.|Then continue we straight ahead.|Then we'll keep going straight.
+Det här är ingen nödsituation, även om jag är hungrig.|This here is no emergency-situation, even if I am hungry.|It's not an emergency, even if I'm hungry.
+
+ikea-recycle
+w|Vi har två tomma flaskor i vagnen. Där borta finns återvinningen.|We have two empty bottles in trolley-the. There away exists recycling-the.|We've got two empty bottles in the trolley. The recycling is over there.
+Jag lämnar flaskorna i rätt behållare.|I leave bottles-the in right container.|I'll put the bottles in the right bin.
+Bra. Då slipper de flytta in hos oss.|Good. Then escape they moving in with us.|Good. Then they won't have to move in with us.
+
+ikea-bag
+shop|Vill ni köpa en stor kasse till småsakerna?|Want you [plural] buy a big bag for small-things-the?|Would you like a big bag for the small items?
+Nej tack, vi har en kasse med oss.|No thanks, we have a bag with us.|No thanks, we've brought a bag.
+Den har legat redo hela dagen.|It has lain ready whole day-the.|It's been ready all day.
+
+ikea-straps
+w|Jag tror att spännbanden ligger i bilen. Ska vi kolla innan vi lastar?|I think that tension-straps-the lie in car-the. Shall we check before we load?|I think the straps are in the car. Shall we check before we load up?
+Ja, jag tittar i bagageutrymmet.|Yes, I look in luggage-space-the.|Yes, I'll check the boot.
+Bra. Måttband och spännband har olika jobb.|Good. Measuring-tape and tension-straps have different jobs.|Good. Tape measures and straps have different jobs.
+
+ikea-umbrella
+w|Regnet har börjat. Mitt paraply ligger fortfarande i bilen.|Rain-the has begun. My umbrella lies still in car-the.|It's started raining. My umbrella is still in the car.
+Vänta här under tak så hämtar jag det.|Wait here under roof so fetch I it.|Wait here under cover and I'll get it.
+Paraplyet är torrast av oss alla.|Umbrella-the is driest of us all.|The umbrella's the driest one of the lot.
+
+ikea-elevator
+shop|Hissen är bakom kassorna. Rulltrappan tar inte vagnar.|Lift-the is behind checkouts-the. Escalator-the takes not trolleys.|The lift's behind the checkouts. Trolleys can't go on the escalator.
+Tack, vi tar hissen ner.|Thanks, we take lift-the down.|Thanks, we'll take the lift down.
+Vagnen föredrar också en lugn nedfärd.|Trolley-the prefers also a calm down-journey.|The trolley also prefers a gentle trip down.
+
+ikea-hold-place
+w|Kan du hålla vår plats i kön medan jag frågar om kvittot?|Can you hold our place in queue-the while I ask about receipt-the?|Could you hold our place while I ask about the receipt?
+Javisst. Jag väntar här med vagnen.|Of course. I wait here with trolley-the.|Of course. I'll wait here with the trolley.
+Tack. Vagnen är en tyst men lojal vän.|Thanks. Trolley-the is a quiet but loyal friend.|Thanks. The trolley is a quiet but loyal friend.
+
+ikea-bench-rest
+w|Det finns en ledig bänk. Ska vi vila benen innan vi går ut?|There exists a free bench. Shall we rest legs-the before we go out?|There's a free bench. Shall we rest our legs before we go out?
+Gärna. Vi sätter oss en minut.|Gladly. We sit ourselves one minute.|Yes, let's sit for a minute.
+Vi har gått längre än varuhuset ser ut utifrån.|We have walked farther than goods-house-the looks out from outside.|We've walked farther than this place looks from the outside.
+
+ikea-phone-card
+shop|Kortläsaren blinkar blått. Nu kan du blippa kortet.|Card-reader-the flashes blue. Now can you tap card-the.|The card reader's flashing blue. You can tap your card now.
+Bra, jag håller kortet mot läsaren.|Good, I hold card-the against reader-the.|Right, I'll hold the card against the reader.
+Ett pip, och hyllan fick ett nytt hem.|One beep, and shelf-the got a new home.|One beep and the shelf got a new home.
+
+ikea-lost-hat
+w|Jag tror att jag glömde mössan i visningsrummet med speglarna.|I think that I forgot hat-the in display-room-the with mirrors-the.|I think I left my hat in the display room with the mirrors.
+Jag frågar om någon har lämnat in den.|I ask if anyone has handed in it.|I'll ask whether anyone handed it in.
+Förhoppningsvis blev den inte en del av inredningen.|Hopefully became it not a part of furnishings-the.|Hopefully it didn't become part of the display.
+
+ikea-way-out
+shop|Till parkeringen går ni genom glasdörrarna rakt fram.|To car-park-the go you [plural] through glass-doors-the straight ahead.|For the car park, go straight ahead through the glass doors.
+Tack. Rakt fram genom glasdörrarna.|Thanks. Straight ahead through glass-doors-the.|Thanks. Straight ahead through the glass doors.
+Så enkelt när man väl vet vilken dörr.|So simple when one once knows which door.|So simple once you know which door.
+
+ikea-return-trolley
+w|När vi har lastat färdigt ska vagnen tillbaka till vagnstället.|When we have loaded finished shall trolley-the back to trolley-rack-the.|Once we're loaded up, the trolley goes back to the trolley bay.
+Jag kör tillbaka vagnen efteråt.|I drive back trolley-the afterwards.|I'll take the trolley back afterwards.
+Den kan berätta om sin utflykt för de andra.|It can tell about its outing for the others.|It can tell the others about its outing.
+
+ikea-row-photo
+w|Var det rad D eller rad E? Jag tog en bild när vi parkerade.|Was it row D or row E? I took a picture when we parked.|Was it row D or row E? I took a photo when we parked.
+Titta på bilden så slipper vi gissa.|Look at picture-the so escape we guessing.|Look at the photo and we won't have to guess.
+Vår bil är inte unik nog för kurragömma här.|Our car is not unique enough for hide-and-seek here.|Our car isn't distinctive enough for hide-and-seek here.
+
+ikea-furniture-rival
+n|En kund bredvid er har byggt ett helt torn av platta paket på sin vagn.|A customer beside you [plural] has built a whole tower of flat packages on their trolley.|A shopper beside you has built a whole tower of flat packs on their trolley.
+Vi nöjer oss med vår enda hylla.|We satisfy ourselves with our only shelf.|One shelf is plenty for us.
+Ja. Vi behöver inte starta ett byggföretag i dag.|Yes. We need not start a construction-company today.|Yes. We don't need to start a construction company today.

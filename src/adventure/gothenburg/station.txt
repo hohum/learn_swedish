@@ -1,0 +1,124 @@
+train-platform
+w|På tavlan står ett spårnummer. Är spår och perrong samma sak?|On board-the stands a track-number. Are track and platform same thing?|There's a track number on the board. Are the track and the platform the same thing?
+Nej, spåret ligger bredvid perrongen.|No, track-the lies beside platform-the.|No, the track runs beside the platform.
+Precis. Vi väntar där det finns bänkar.|Exactly. We wait where there exist benches.|Exactly. We wait where the benches are.
+
+train-screen
+n|Avgångstavlan växlar mellan ankomster och avgångar.|Departure-board-the switches between arrivals and departures.|The display switches between arrivals and departures.
+Vi ska titta på avgångarna.|We shall look at departures-the.|We need the departures.
+Ja. Först ska vi härifrån, sedan kan vi komma tillbaka.|Yes. First shall we from-here, then can we come back.|Yes. We need to get there before we can come back.
+
+train-mumble
+n|Ett meddelande sprakar ur högtalaren. Du uppfattar bara ordet Göteborg.|A message crackles out of loudspeaker-the. You catch only word-the Gothenburg.|An announcement crackles over the speaker. The only word you catch is Gothenburg.
+Förlåt, hörde du vad de sa?|Sorry, heard you what they said?|Sorry, did you catch what they said?
+Bara hälften. Vi kollar tavlan tillsammans.|Only half-the. We check board-the together.|Only half of it. Let's check the board together.
+
+train-phone-charge
+w|Telefonen visar fem procent. Jag vill kunna visa biljetten.|Phone-the shows five percent. I want be able to show ticket-the.|My phone's at five percent. I need to be able to show the ticket.
+Du kan låna min powerbank.|You can borrow my power-bank.|You can borrow my power bank.
+Bra. Fem procent är ingen resplan.|Good. Five percent is no journey-plan.|Good. Five percent isn't a travel plan.
+
+train-qr
+w|Det är biljetten med QR-koden vi behöver, inte betalningsbekräftelsen.|It is ticket-the with QR-code-the we need, not payment-confirmation-the.|We need the ticket with the QR code, not the payment confirmation.
+Då öppnar jag själva biljetten.|Then open I actual ticket-the.|Then I'll open the ticket itself.
+Bra. Kvittot är väldigt nöjt men svårt att skanna.|Good. Receipt-the is very pleased but hard to scan.|Good. The receipt is very pleased with itself but hard to scan.
+
+train-coins
+p|Tar den där automaten kort? Jag har inga mynt.|Takes that there machine-the card? I have no coins.|Does that machine take cards? I don't have any coins.
+Ja, det sitter en kortläsare på sidan.|Yes, there sits a card-reader on side-the.|Yes, there's a card reader on the side.
+Du räddade just någon från att leta växel.|You saved just someone from to look-for change.|You just saved someone hunting for change.
+
+train-time
+p|Ursäkta, hur mycket är klockan? Min telefon dog.|Excuse [me], how much is clock-the? My phone died.|Excuse me, what time is it? My phone died.
+Den är tio över elva.|It is ten past eleven.|It's ten past eleven.
+Klockan på väggen håller med.|Clock-the on wall-the agrees with.|The clock on the wall agrees.
+
+train-glassdoor
+w|Står det dra eller tryck på dörren? Jag ser bara min spegelbild.|Stands it pull or push on door-the? I see only my mirror-image.|Does the door say pull or push? I can only see my reflection.
+Det står dra. Jag öppnar.|It stands pull. I open.|It says pull. I'll open it.
+Nu har du besegrat dagens första glasdörr.|Now have you defeated day-the’s first glass-door.|You've defeated the first glass door of the day.
+
+train-seat-bag
+p|Är det okej om jag sätter mig där din väska står?|Is it okay if I seat myself where your bag stands?|Do you mind if I sit where your bag is?
+Självklart. Jag flyttar väskan.|Of course. I move bag-the.|Of course. I'll move the bag.
+Väskan har ändå inte köpt någon biljett.|Bag-the has anyway not bought any ticket.|The bag hasn't bought a ticket anyway.
+
+train-luggage
+station|Se upp så att väskan inte står i gången när folk går förbi.|Look up so that bag-the not stands in passage-the when people go past.|Make sure your bag isn't in the way when people pass.
+Jag ställer den mellan mina fötter.|I put it between my feet.|I'll put it between my feet.
+Ett litet garage för ryggsäcken.|A little garage for backpack-the.|A little garage for the backpack.
+
+train-umbrella-rack
+w|Paraplyet droppar. Där finns ett ställ för blöta paraplyer.|Umbrella-the drips. There exists a stand for wet umbrellas.|The umbrella's dripping. There's a stand for wet umbrellas over there.
+Jag ställer det i paraplystället så länge.|I put it in umbrella-stand-the meanwhile.|I'll put it in the umbrella stand for now.
+Bra. Kom ihåg vem som tog med paraplyet hit.|Good. Come in-memory who took along umbrella-the here.|Good. Remember who brought the umbrella here.
+
+train-printed
+p|Är det där en tidtabell för helger eller vardagar?|Is that there a timetable for weekends or weekdays?|Is that the timetable for weekends or weekdays?
+Det står lördag och söndag längst upp.|It stands Saturday and Sunday farthest up.|It says Saturday and Sunday at the top.
+Precis. Vi har rätt kolumn och rätt dag.|Exactly. We have right column and right day.|Exactly. Right column, right day.
+
+train-clock-change
+w|Stationsklockan går två minuter före min telefon.|Station-clock-the goes two minutes ahead of my phone.|The station clock is two minutes ahead of my phone.
+Vi går efter stationsklockan för säkerhets skull.|We go after station-clock-the for safety’s sake.|Let's go by the station clock to be on the safe side.
+Klockan är åtminstone tidig.|Clock-the is at-least early.|At least the clock is early.
+
+train-information
+station|Behöver ni hjälp? Information om spåren finns också på tavlan vid pelaren.|Need you [plural] help? Information about tracks-the exists also on board-the by pillar-the.|Need a hand? There's track information on the board by the pillar too.
+Ja tack, vi vill dubbelkolla spåret.|Yes please, we want double-check track-the.|Yes, please. We'd like to double-check the track.
+Väldigt mycket bättre än att trippelgissa.|Very much better than to triple-guess.|Much better than triple-guessing.
+
+train-waitroom
+w|Det är kallt på perrongen. Ska vi vänta inne så länge?|It is cold on platform-the. Shall we wait inside meanwhile?|It's cold on the platform. Shall we wait inside for now?
+Gärna, bara vi ser avgångstavlan.|Gladly, only we see departure-board-the.|Sure, as long as we can see the departures board.
+Bra. Värme och information på samma ställe.|Good. Heat and information in same place.|Good. Warmth and information in one place.
+
+train-cup-lid
+cafe|Vill du ha ett lock på kaffet så att du kan ta med det?|Want you have a lid on coffee-the so that you can take along it?|Want a lid on your coffee so you can take it with you?
+Ja tack, jag ska ut på perrongen.|Yes please, I shall out onto platform-the.|Yes, please. I'm going out onto the platform.
+Kaffet reser helst utan turbulens.|Coffee-the travels preferably without turbulence.|The coffee prefers to travel without turbulence.
+
+train-stairs
+p|Vart går trappan bakom biljettautomaten?|To where goes stairway-the behind ticket-machine-the?|Where do the stairs behind the ticket machine go?
+Den går ner till gångtunneln.|It goes down to walking-tunnel-the.|They go down to the underpass.
+Bra. Upp hade varit lite oväntat.|Good. Up would have been a little unexpected.|Good. Up would have been a bit unexpected.
+
+train-backpack
+w|Du har öppet i ryggsäcken. Dragkedjan är helt nere.|You have open in backpack-the. Zip-the is completely down.|Your backpack's open. The zip's all the way down.
+Tack, jag drar igen den.|Thanks, I pull shut it.|Thanks, I'll zip it up.
+Inga resenärer får trilla ur.|No travellers get fall out.|We can't have any passengers falling out.
+
+train-vending
+n|Chokladkakan sitter fast i automaten trots att du har betalat.|Chocolate-bar-the sits stuck in machine-the despite that you have paid.|The chocolate bar is stuck in the machine even though you've paid.
+Jag frågar kiosken vem som kan hjälpa till.|I ask kiosk-the who can help out.|I'll ask at the kiosk who can help.
+Bra. Vi bråkar inte med en automat före lunch.|Good. We quarrel not with a machine before lunch.|Good. We're not picking a fight with a machine before lunch.
+
+train-bench
+w|Den här bänken har ett hål i mitten. Vill du sitta på andra sidan?|This here bench-the has a hole in middle-the. Want you sit on other side-the?|There's a hole in the middle of this bench. Want to sit at the other end?
+Ja, där finns en hel bräda kvar.|Yes, there exists a whole plank left.|Yes, there's still a whole plank over there.
+Oväntat bra att du kan ordet hel.|Unexpectedly good that you know word-the whole.|Knowing the word whole came in handy there.
+
+train-elevator
+p|Vilken knapp trycker man på för att komma till perrongen?|Which button presses one on to come to platform-the?|Which button takes you to the platform?
+Tryck på den med en tågsymbol.|Press on the one with a train-symbol.|Press the one with the train symbol.
+Här behövde vi knappt några ord.|Here needed we hardly any words.|We barely needed any words for that one.
+
+train-bag-tag
+n|På golvet ligger en bagagebricka med ett namn, men ingen väska.|On floor-the lies a luggage-tag with a name, but no bag.|There's a luggage tag with a name on the floor, but no bag.
+Vi kan lämna in brickan till personalen.|We can hand in tag-the to staff-the.|We can hand the tag in to the staff.
+Bra. Detektivarbetet tog en halv minut.|Good. Detective-work-the took half a minute.|Good. That detective work took half a minute.
+
+train-whistle
+w|Det visslar till bakom oss. Var det tåget eller någon människa?|It whistles briefly behind us. Was it train-the or some person?|There was a whistle behind us. Was that a train or a person?
+Jag tror att någon ropade på en vän.|I think that someone called on a friend.|I think someone was calling to a friend.
+Ingen avgång med andra ord.|No departure with other words.|No departure, in other words.
+
+train-newspaper
+p|Vill du ha tidningen? Jag har läst klart den.|Want you have newspaper-the? I have read finished it.|Would you like the newspaper? I've finished it.
+Gärna, tack. Jag övar på att läsa svenska.|Gladly, thanks. I practise on reading Swedish.|Yes, thanks. I'm practising reading Swedish.
+Börja med rubrikerna, de har nästan punktligt slut.|Begin with headlines-the, they have almost punctual end.|Start with the headlines. At least they mostly finish on time.
+
+train-ticket-zone
+w|Det finns två biljetter i appen. En är från i går.|There exist two tickets in app-the. One is from yesterday.|There are two tickets in the app. One is from yesterday.
+Jag väljer den med dagens datum.|I choose the one with day-the’s date.|I'll choose the one with today's date.
+Bra. I går har redan åkt.|Good. Yesterday has already travelled.|Good. Yesterday's already left.

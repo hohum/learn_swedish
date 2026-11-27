@@ -12,7 +12,7 @@ use learn_swedish::lesson::{
     Answer, Category, Lesson, Phrase, feedback_count, feedback_phrase, next_phrase,
     next_phrase_count, spoken_input, wait_phrase, wait_phrase_count,
 };
-use speech::Speech;
+use speech::{AzureSpeech, Speech};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -319,7 +319,12 @@ fn main() -> glib::ExitCode {
             window.present();
             return;
         }
-        build_launcher(app, Rc::new(|| Rc::new(Speech::default()))).present();
+        let azure = Rc::new(AzureSpeech::from_env());
+        build_launcher(
+            app,
+            Rc::new(move || Rc::new(Speech::with_azure(azure.clone()))),
+        )
+        .present();
     });
     app.run()
 }
@@ -329,9 +334,6 @@ fn prepare_speech_from_args() -> Option<Result<(), Box<dyn std::error::Error>>> 
     match std::env::args_os().nth(1).as_deref() {
         Some(arg) if arg == "--prepare-speech" => Some(speech::prepare_speech()),
         Some(arg) if arg == "--prepare-azure-speech" => Some(speech::prepare_azure_speech()),
-        Some(arg) if arg == "--prepare-adventure-speech" => {
-            Some(speech::prepare_adventure_speech())
-        }
         _ => None,
     }
 }
@@ -1635,7 +1637,7 @@ mod tests {
                 );
             }
         }
-        crate::story_ui::test_flow(&app, &silent_wav());
+        crate::story_ui::test_flow(&app);
         window.hide();
         assert_launcher_flow(&app, voice_dirs.clone());
         window.close();
