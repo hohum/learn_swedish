@@ -37,18 +37,26 @@ def main() -> None:
         binary.chmod(0o755)
         for filename in ["README.md", "LICENSE"]:
             shutil.copyfile(root / filename, bundle / filename)
-        (bundle / "scripts").mkdir()
-        shutil.copyfile(
-            root / "scripts/requirements-azure.txt",
-            bundle / "scripts/requirements-azure.txt",
+        story_files = sorted(
+            path.name
+            for path in (root / "stories").iterdir()
+            if path.is_file() and path.suffix in {".xml", ".xsd"}
         )
+        for folder, files in [
+            ("scripts", ["requirements-azure.txt"]),
+            ("stories", story_files),
+            ("docs", ["story-xml-spec.md"]),
+        ]:
+            (bundle / folder).mkdir()
+            for filename in files:
+                shutil.copyfile(root / folder / filename, bundle / folder / filename)
         with tarfile.open(archive, "w:gz") as tar:
             tar.add(bundle, arcname=bundle.name, filter=root_owner)
 
         package = staging / "debian"
         for directory in [
             "DEBIAN", "usr/bin", "usr/share/applications",
-            "usr/share/doc/learn-swedish", "usr/share/learn-swedish",
+            "usr/share/doc/learn-swedish", "usr/share/learn-swedish/stories",
         ]:
             (package / directory).mkdir(parents=True, exist_ok=True)
         shutil.copy2(binary, package / "usr/bin/learn-swedish")
@@ -59,8 +67,20 @@ def main() -> None:
         shutil.copyfile(root / "LICENSE", package / "usr/share/doc/learn-swedish/copyright")
         shutil.copyfile(root / "README.md", package / "usr/share/doc/learn-swedish/README.md")
         shutil.copyfile(
+            root / "docs/story-xml-spec.md",
+            package / "usr/share/doc/learn-swedish/story-xml-spec.md",
+        )
+        shutil.copyfile(
             root / "scripts/requirements-azure.txt",
             package / "usr/share/learn-swedish/requirements-azure.txt",
+        )
+        for story_file in story_files:
+            shutil.copyfile(
+                root / "stories" / story_file,
+                package / "usr/share/learn-swedish/stories" / story_file,
+            )
+        installed_bytes = binary.stat().st_size + sum(
+            (root / "stories" / f).stat().st_size for f in story_files
         )
         (package / "DEBIAN/control").write_text(
             f"Package: learn-swedish\n"
@@ -69,7 +89,7 @@ def main() -> None:
             "Maintainer: hohum <hohum@users.noreply.github.com>\n"
             "Section: education\n"
             "Priority: optional\n"
-            f"Installed-Size: {(binary.stat().st_size + 1023) // 1024 + 64}\n"
+            f"Installed-Size: {(installed_bytes + 1023) // 1024 + 96}\n"
             "Depends: libc6 (>= 2.43), libgcc-s1, libgtk-4-1 (>= 4.22), "
             "libadwaita-1-0 (>= 1.9), libgstreamer1.0-0 (>= 1.28), "
             "gstreamer1.0-plugins-base, gstreamer1.0-plugins-good\n"

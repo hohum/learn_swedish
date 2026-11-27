@@ -162,7 +162,7 @@ pub fn transcript_markup(
                 escaped.to_string()
             }
         }).collect::<Vec<_>>().join(" ");
-        let spoken = if let Some(speaker) = phrase.speaker {
+        let spoken = if let Some(speaker) = &phrase.speaker {
             format!("<span size=\"small\" weight=\"bold\">{}</span> · {swedish}", glib::markup_escape_text(speaker))
         } else {
             swedish
@@ -170,7 +170,7 @@ pub fn transcript_markup(
         let mut text = spoken;
         if show_english {
             use std::fmt::Write;
-            if let Some(literal) = phrase.literal {
+            if let Some(literal) = &phrase.literal {
                 write!(text, "\n<span size=\"small\" style=\"italic\">{}</span>", glib::markup_escape_text(literal)).unwrap();
             }
             if !phrase.english.is_empty() {
@@ -561,8 +561,12 @@ impl Speech {
         self.azure.disable();
     }
 
+    pub fn set_cast(&self, actors: &[learn_swedish::adventure::ActorSpec]) {
+        self.cast.borrow_mut().set_specs(actors.to_vec());
+    }
+
     pub fn recast_guests(&self) {
-        self.cast.replace(azure::Cast::default());
+        self.cast.borrow_mut().recast_guests();
     }
 
     pub fn set_show_english(&self, show: bool) {
@@ -597,7 +601,7 @@ impl Speech {
         {
             let plain = |phrase: &Phrase| {
                 let mut text = String::new();
-                if let Some(speaker) = phrase.speaker {
+                if let Some(speaker) = &phrase.speaker {
                     text.push_str(speaker);
                     text.push_str(" · ");
                 }
@@ -609,7 +613,7 @@ impl Speech {
                         .join(" "),
                 );
                 if self.show_english.get() {
-                    if let Some(literal) = phrase.literal {
+                    if let Some(literal) = &phrase.literal {
                         text.push('\n');
                         text.push_str(literal);
                     }
@@ -626,6 +630,7 @@ impl Speech {
                 .sum();
             let speaker = phrases[phrase_index]
                 .speaker
+                .as_ref()
                 .map_or(0, |name| name.len() + " · ".len());
             let words: usize = phrases[phrase_index]
                 .swedish
@@ -1683,7 +1688,7 @@ mod tests {
         let phrases = vec![
             Phrase {
                 english: "Less < & more".into(),
-                literal: Some("Literal < & >"),
+                literal: Some("Literal < & >".into()),
                 swedish: "Mindre än".into(),
                 voice: None,
                 speaker: None,

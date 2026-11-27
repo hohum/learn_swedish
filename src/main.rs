@@ -311,22 +311,58 @@ fn main() -> glib::ExitCode {
         };
     }
 
+    let initial_story = match story_path_from_args() {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("{error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+
     let app = adw::Application::builder()
         .application_id("io.github.hohum.LearnSwedish")
         .build();
-    app.connect_activate(|app| {
+    let initial_story = RefCell::new(initial_story);
+    app.connect_activate(move |app| {
         if let Some(window) = app.active_window() {
             window.present();
             return;
         }
         let azure = Rc::new(AzureSpeech::from_env());
-        build_launcher(
-            app,
-            Rc::new(move || Rc::new(Speech::with_azure(azure.clone()))),
-        )
-        .present();
+        let new_speech: Rc<dyn Fn() -> Rc<Speech>> =
+            Rc::new(move || Rc::new(Speech::with_azure(azure.clone())));
+        let launcher = build_launcher(app, new_speech.clone());
+        if let Some(story_path) = initial_story.borrow_mut().take() {
+            story_ui::open(app, &launcher, new_speech(), Some(&story_path));
+        } else {
+            launcher.present();
+        }
     });
-    app.run()
+    app.run_with_args::<&str>(&[])
+}
+
+fn story_path_from_args() -> Result<Option<std::path::PathBuf>, String> {
+    let mut args = std::env::args_os().skip(1);
+    let Some(first) = args.next() else {
+        return Ok(None);
+    };
+    let path = if first == "--story" {
+        let value = args
+            .next()
+            .ok_or_else(|| "Usage: learn-swedish [--story] <path/to/story.xml>".to_owned())?;
+        std::path::PathBuf::from(value)
+    } else if first.to_string_lossy().starts_with('-') {
+        return Err(format!(
+            "Unknown option {:?}. Usage: learn-swedish [--story <path/to/story.xml>]",
+            first
+        ));
+    } else {
+        std::path::PathBuf::from(first)
+    };
+    if args.next().is_some() {
+        return Err("Usage: learn-swedish [--story] <path/to/story.xml>".into());
+    }
+    Ok(Some(path))
 }
 
 #[cfg(unix)]
@@ -403,7 +439,7 @@ fn build_launcher(
         app,
         #[weak]
         window,
-        move |_| story_ui::open(&app, &window, new_speech())
+        move |_| story_ui::open(&app, &window, new_speech(), None)
     ));
     window
 }

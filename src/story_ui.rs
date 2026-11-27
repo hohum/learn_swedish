@@ -1,13 +1,16 @@
 use crate::speech::Speech;
-use adw::{glib, gtk, prelude::*};
-use learn_swedish::adventure::{Book, FAREWELL, Scene};
+use adw::{gio, glib, gtk, prelude::*};
+use learn_swedish::adventure::{Book, Scene};
 use learn_swedish::lesson::Phrase;
 use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 struct Reader {
-    book: RefCell<Book>,
+    book: RefCell<Option<Book>>,
+    story_path: RefCell<Option<PathBuf>>,
     speech: Rc<Speech>,
+    header_title: adw::WindowTitle,
     title: gtk::Label,
     illustration: gtk::DrawingArea,
     scene: Rc<Cell<Scene>>,
@@ -24,6 +27,7 @@ struct Reader {
     automatic: gtk::CheckButton,
     pause_sentences: gtk::CheckButton,
     replay: gtk::Button,
+    restart: gtk::Button,
     speaking: Cell<bool>,
 }
 
@@ -33,35 +37,79 @@ fn random_index(upper: usize) -> usize {
 
 impl Reader {
     fn phrases(&self) -> Vec<Phrase> {
-        let book = self.book.borrow();
+        let borrow = self.book.borrow();
+        let Some(book) = borrow.as_ref() else {
+            return Vec::new();
+        };
         if let Some(selected) = book.selected {
-            let choice = book.page().choices[selected];
+            let choice = &book.page().choices[selected];
             vec![choice.line.phrase(), choice.reply.phrase()]
         } else {
             book.page().phrases()
         }
     }
 
+    fn load_file(self: &Rc<Self>, path: &Path) -> Result<(), String> {
+        let book = Book::load_file(path, random_index)?;
+        self.apply_book(book, Some(path.to_path_buf()));
+        Ok(())
+    }
+
+    fn apply_book(self: &Rc<Self>, book: Book, path: Option<PathBuf>) {
+        self.speech.stop();
+        self.speech.clear_last_sentence();
+        self.header_title.set_title(&book.story().title);
+        self.header_title.set_subtitle(&book.story().subtitle);
+        self.speech.set_cast(&book.story().actors);
+        self.story_path.replace(path);
+        self.book.replace(Some(book));
+        self.show();
+    }
+
     fn controls(&self) {
-        let book = self.book.borrow();
+        let borrow = self.book.borrow();
+        let Some(book) = borrow.as_ref() else {
+            self.entry.set_sensitive(false);
+            self.submit.set_sensitive(false);
+            self.skip.set_sensitive(false);
+            self.next.set_sensitive(false);
+            self.replay.set_sensitive(false);
+            self.restart.set_sensitive(false);
+            self.entry.set_visible(false);
+            self.submit.set_visible(false);
+            self.skip.set_visible(false);
+            self.choice_scroll.set_visible(false);
+            for choice in &self.choices {
+                choice.set_visible(false);
+                choice.set_sensitive(false);
+            }
+            return;
+        };
         let answering = !self.speaking.get() && book.selected.is_none() && !book.finished;
+        let choice_count = book.page().choices.len();
         self.entry.set_sensitive(answering);
+        self.entry.set_placeholder_text(Some(&format!(
+            "1–{choice_count} or the full Swedish response"
+        )));
         self.submit.set_sensitive(answering);
         self.entry.set_visible(!book.finished);
         self.submit.set_visible(!book.finished);
         self.skip.set_visible(!book.finished);
         self.choice_scroll.set_visible(!book.finished);
-        for choice in &self.choices {
-            choice.set_sensitive(answering);
+        for (index, choice) in self.choices.iter().enumerate() {
+            choice.set_visible(index < choice_count);
+            choice.set_sensitive(answering && index < choice_count);
         }
         self.next
             .set_sensitive(!self.speaking.get() && (book.finished || book.selected.is_some()));
         self.skip.set_sensitive(!book.finished);
         self.replay.set_sensitive(!book.finished);
+        self.restart.set_sensitive(true);
     }
 
     fn skip(self: &Rc<Self>) {
-        if self.book.borrow_mut().skip() {
+        let skipped = self.book.borrow_mut().as_mut().is_some_and(Book::skip);
+        if skipped {
             self.show();
         }
     }
@@ -88,12 +136,16 @@ impl Reader {
     }
 
     fn speak(self: &Rc<Self>) {
+        let phrases = self.phrases();
+        if phrases.is_empty() {
+            return;
+        }
         self.speech.stop();
         self.speaking.set(true);
         self.controls();
         let weak = Rc::downgrade(self);
         self.speech
-            .speak_then(self.phrases(), &self.status, &self.transcript, move |_| {
+            .speak_then(phrases, &self.status, &self.transcript, move |_| {
                 if let Some(reader) = weak.upgrade() {
                     reader.speaking.set(false);
                     reader.controls();
@@ -110,19 +162,47 @@ impl Reader {
         self.entry.set_text("");
         self.text_scroll.vadjustment().set_value(0.0);
         self.choice_scroll.vadjustment().set_value(0.0);
-        let book = self.book.borrow();
+        let borrow = self.book.borrow();
+        let Some(book) = borrow.as_ref() else {
+            drop(borrow);
+            self.scene.set(Scene::Home);
+            self.illustration.queue_draw();
+            self.header_title.set_title("Story Reader");
+            self.header_title.set_subtitle("Open a Story XML file");
+            self.title
+                .set_label("Ingen berättelse inläst · No story loaded");
+            self.transcript
+                .set_text("Use Open story… in the header bar to load a Story XML (.xml) file.");
+            self.controls();
+            self.status.set_label(
+                "No story XML loaded. Click Open story… above to select a .xml story file.",
+            );
+            return;
+        };
+        self.header_title.set_title(&book.story().title);
+        self.header_title.set_subtitle(&book.story().subtitle);
         self.scene.set(book.page().scene);
         self.illustration.queue_draw();
+        let choice_count = book.page().choices.len();
+        let selected = book.selected.is_some();
         if book.finished {
-            self.title.set_label("Hemma igen · Slut");
+            let ending = &book.story().ending;
+            self.title.set_label(&ending.title);
             self.speech
-                .show_transcript(&[FAREWELL.phrase()], &self.transcript);
-            self.next.set_label("Ny utflykt · New outing");
-            self.status.set_label(
-                "You are home again. Choose New outing to pick a destination for next Saturday.",
-            );
+                .show_transcript(&[ending.line.phrase()], &self.transcript);
+            if book.has_outing_hub() {
+                self.next.set_label("Ny utflykt · New outing");
+                self.status.set_label(
+                    "You are home again. Choose New outing for another destination, or Open story… for another XML book.",
+                );
+            } else {
+                self.next.set_label("Börja om · Play again");
+                self.status.set_label(
+                    "Story complete. Choose Play again to restart, or Open story… for another XML book.",
+                );
+            }
         } else {
-            self.title.set_label(book.page().title.swedish);
+            self.title.set_label(&book.page().title.swedish);
             self.next.set_label(
                 if book
                     .selected
@@ -135,7 +215,7 @@ impl Reader {
             );
         }
         let finished = book.finished;
-        drop(book);
+        drop(borrow);
         self.show_choices();
         self.controls();
         if !finished {
@@ -144,37 +224,57 @@ impl Reader {
             if self.automatic.is_active() && self.speech.azure_enabled() {
                 self.speak();
             } else if self.speech.azure_enabled() {
-                self.status.set_label(if self.book.borrow().selected.is_some() {
-                    "Read the reply, then use Continue or Try again. Replay reads the exchange aloud."
+                self.status.set_label(&if selected {
+                    "Read the reply, then use Continue or Try again. Replay reads the exchange aloud.".into()
                 } else {
-                    "Choose 1–4 or type a full Swedish response. Replay reads this page aloud."
+                    format!(
+                        "Choose 1–{choice_count} or type a full Swedish response. Replay reads this page aloud."
+                    )
                 });
             } else {
-                self.status.set_label(if self.book.borrow().selected.is_some() {
-                    "Read the reply, then use Continue or Try again. Open Azure Speech above for live audio."
+                self.status.set_label(&if selected {
+                    "Read the reply, then use Continue or Try again. Open Azure Speech above for live audio.".into()
                 } else {
-                    "Choose 1–4 or type a full Swedish response. Open Azure Speech above for live audio."
+                    format!(
+                        "Choose 1–{choice_count} or type a full Swedish response. Open Azure Speech above for live audio."
+                    )
                 });
             }
         }
     }
 
     fn show_choices(&self) {
-        for (index, (button, choice)) in self
-            .choices
-            .iter()
-            .zip(&self.book.borrow().page().choices)
-            .enumerate()
-        {
+        let borrow = self.book.borrow();
+        let Some(book) = borrow.as_ref() else {
+            for button in &self.choices {
+                button.set_visible(false);
+            }
+            return;
+        };
+        let page_choices = &book.page().choices;
+        for (index, button) in self.choices.iter().enumerate() {
+            let Some(choice) = page_choices.get(index) else {
+                button.set_visible(false);
+                continue;
+            };
+            button.set_visible(true);
             let label = button.child().unwrap().downcast::<gtk::Label>().unwrap();
             let text = format!("{}. {}", index + 1, choice.line.swedish);
             if self.english.is_active() {
-                label.set_markup(&format!(
-                    "{}\n<span size=\"small\" style=\"italic\">{}</span>\n<span size=\"small\">{}</span>",
-                    glib::markup_escape_text(&text),
-                    glib::markup_escape_text(choice.line.literal),
-                    glib::markup_escape_text(choice.line.english),
-                ));
+                let mut markup = glib::markup_escape_text(&text).to_string();
+                if let Some(literal) = &choice.line.literal {
+                    markup.push_str(&format!(
+                        "\n<span size=\"small\" style=\"italic\">{}</span>",
+                        glib::markup_escape_text(literal)
+                    ));
+                }
+                if !choice.line.english.is_empty() {
+                    markup.push_str(&format!(
+                        "\n<span size=\"small\">{}</span>",
+                        glib::markup_escape_text(&choice.line.english)
+                    ));
+                }
+                label.set_markup(&markup);
             } else {
                 label.set_text(&text);
             }
@@ -185,17 +285,27 @@ impl Reader {
         if self.speaking.get() {
             return;
         }
-        let result = self.book.borrow_mut().answer(input);
+        let result = {
+            let mut borrow = self.book.borrow_mut();
+            let Some(book) = borrow.as_mut() else {
+                return;
+            };
+            book.answer(input)
+        };
         match result {
             Ok(_) => self.show(),
-            Err(error) => self.status.set_label(error),
+            Err(error) => self.status.set_label(&error),
         }
     }
 
     fn update_speech_source(self: &Rc<Self>) {
         self.speech.stop();
-        if self.automatic.is_active() && self.speech.azure_enabled() && !self.book.borrow().finished
-        {
+        let has_active_page = self
+            .book
+            .borrow()
+            .as_ref()
+            .is_some_and(|book| !book.finished);
+        if self.automatic.is_active() && self.speech.azure_enabled() && has_active_page {
             self.speak();
         } else {
             self.status.set_label(if self.speech.azure_enabled() {
@@ -207,8 +317,13 @@ impl Reader {
     }
 }
 
-pub fn open(app: &adw::Application, launcher: &adw::ApplicationWindow, speech: Rc<Speech>) {
-    let (window, reader) = build(app, speech);
+pub fn open(
+    app: &adw::Application,
+    launcher: &adw::ApplicationWindow,
+    speech: Rc<Speech>,
+    story_file: Option<&Path>,
+) {
+    let (window, reader, startup_error) = build_with_story(app, speech, story_file);
     window.connect_close_request({
         let launcher = launcher.clone();
         move |_| {
@@ -219,18 +334,58 @@ pub fn open(app: &adw::Application, launcher: &adw::ApplicationWindow, speech: R
     launcher.hide();
     window.present();
     reader.show();
+    if let Some(error) = startup_error {
+        reader.status.set_label(&error);
+    }
 }
 
+fn build_with_story(
+    app: &adw::Application,
+    speech: Rc<Speech>,
+    story_file: Option<&Path>,
+) -> (adw::ApplicationWindow, Rc<Reader>, Option<String>) {
+    let loaded = match story_file {
+        Some(path) => Book::load_file(path, random_index).map(|book| (path.to_path_buf(), book)),
+        None => Book::load_default(random_index),
+    };
+    let (initial_path, initial_book, startup_error) = match loaded {
+        Ok((path, book)) => (Some(path), Some(book), None),
+        Err(error) => (None, None, Some(error)),
+    };
+    let (window, reader) = build_ui(app, speech, initial_book, initial_path);
+    (window, reader, startup_error)
+}
+
+#[cfg(test)]
 fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow, Rc<Reader>) {
+    let (window, reader, startup_error) = build_with_story(app, speech, None);
+    assert!(startup_error.is_none(), "{startup_error:?}");
+    (window, reader)
+}
+
+fn build_ui(
+    app: &adw::Application,
+    speech: Rc<Speech>,
+    initial_book: Option<Book>,
+    initial_path: Option<PathBuf>,
+) -> (adw::ApplicationWindow, Rc<Reader>) {
+    if let Some(book) = &initial_book {
+        speech.set_cast(&book.story().actors);
+    }
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let header = adw::HeaderBar::new();
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        "En lagom äventyrlig lördag",
-        "A Swedish choose-your-own-adventure",
-    )));
+    let header_title = match &initial_book {
+        Some(book) => adw::WindowTitle::new(&book.story().title, &book.story().subtitle),
+        None => adw::WindowTitle::new("Story Reader", "Open a Story XML file"),
+    };
+    header.set_title_widget(Some(&header_title));
     let back = gtk::Button::with_label("Meny · Menu");
     back.set_widget_name("activity-menu");
     header.pack_start(&back);
+    let open_story = gtk::Button::with_label("Open story…");
+    open_story.set_widget_name("open-story");
+    open_story.set_tooltip_text(Some("Load any Choose-Your-Own-Adventure Story XML file"));
+    header.pack_start(&open_story);
     let azure = gtk::Button::with_label("Azure Speech");
     azure.set_widget_name("azure-settings");
     azure.set_tooltip_text(Some("Set up live story audio"));
@@ -345,8 +500,10 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         .content(&content)
         .build();
     let reader = Rc::new(Reader {
-        book: RefCell::new(Book::randomized(random_index)),
+        book: RefCell::new(initial_book),
+        story_path: RefCell::new(initial_path),
         speech,
+        header_title,
         title,
         illustration,
         scene,
@@ -363,8 +520,16 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         automatic,
         pause_sentences,
         replay,
+        restart: restart.clone(),
         speaking: Cell::new(false),
     });
+    open_story.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        window,
+        move |_| prompt_open_story(&reader, &window)
+    ));
     azure.connect_clicked(glib::clone!(
         #[weak]
         reader,
@@ -396,7 +561,7 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
             } else if key == gtk::gdk::Key::Right
                 && shortcut_modifiers == gtk::gdk::ModifierType::CONTROL_MASK
                 && !editing_text
-                && !reader.book.borrow().finished
+                && reader.book.borrow().as_ref().is_some_and(|b| !b.finished)
             {
                 reader.skip();
                 return glib::Propagation::Stop;
@@ -441,16 +606,23 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         #[weak]
         reader,
         move |_| {
-            {
-                let mut book = reader.book.borrow_mut();
-                if book.finished {
-                    book.new_outing(random_index);
-                    reader.speech.recast_guests();
+            let updated = {
+                let mut borrow = reader.book.borrow_mut();
+                if let Some(book) = borrow.as_mut() {
+                    if book.finished {
+                        book.new_outing(random_index);
+                        reader.speech.recast_guests();
+                    } else {
+                        book.continue_story();
+                    }
+                    true
                 } else {
-                    book.continue_story();
+                    false
                 }
+            };
+            if updated {
+                reader.show();
             }
-            reader.show();
         }
     ));
     reader.replay.connect_clicked(glib::clone!(
@@ -462,16 +634,31 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         #[weak]
         reader,
         move |_| {
-            reader.book.borrow_mut().restart(random_index);
-            reader.speech.recast_guests();
-            reader.show();
+            let restarted = {
+                let mut borrow = reader.book.borrow_mut();
+                if let Some(book) = borrow.as_mut() {
+                    book.restart(random_index);
+                    true
+                } else {
+                    false
+                }
+            };
+            if restarted {
+                reader.speech.recast_guests();
+                reader.show();
+            }
         }
     ));
     reader.automatic.connect_toggled(glib::clone!(
         #[weak]
         reader,
         move |toggle| {
-            if toggle.is_active() && !reader.book.borrow().finished {
+            let has_active_page = reader
+                .book
+                .borrow()
+                .as_ref()
+                .is_some_and(|book| !book.finished);
+            if toggle.is_active() && has_active_page {
                 reader.speak();
             } else {
                 reader.speech.stop();
@@ -497,6 +684,58 @@ fn build(app: &adw::Application, speech: Rc<Speech>) -> (adw::ApplicationWindow,
         }
     });
     (window, reader)
+}
+
+fn prompt_open_story(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Story XML files (*.xml)"));
+    filter.add_pattern("*.xml");
+    let dialog = gtk::FileChooserNative::new(
+        Some("Open Story XML"),
+        Some(window),
+        gtk::FileChooserAction::Open,
+        Some("Open"),
+        Some("Cancel"),
+    );
+    dialog.set_modal(true);
+    dialog.add_filter(&filter);
+    if let Some(folder) = reader
+        .story_path
+        .borrow()
+        .as_ref()
+        .and_then(|path| path.parent())
+        .filter(|dir| dir.is_dir())
+    {
+        let _ = dialog.set_current_folder(Some(&gio::File::for_path(folder)));
+    }
+    let keep_alive = Rc::new(RefCell::new(Some(dialog.clone())));
+    dialog.connect_response(glib::clone!(
+        #[weak]
+        reader,
+        move |dialog, response| {
+            let _held = keep_alive.borrow_mut().take();
+            let selected = (response == gtk::ResponseType::Accept)
+                .then(|| dialog.file())
+                .flatten();
+            dialog.destroy();
+            let Some(file) = selected else {
+                if response == gtk::ResponseType::Accept {
+                    reader.status.set_label("No story XML file was selected.");
+                }
+                return;
+            };
+            let Some(path) = file.path() else {
+                reader
+                    .status
+                    .set_label("Selected story XML does not have a local file path.");
+                return;
+            };
+            if let Err(error) = reader.load_file(&path) {
+                reader.status.set_label(&error);
+            }
+        }
+    ));
+    dialog.show();
 }
 
 fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
@@ -696,6 +935,7 @@ fn draw_scene(cr: &gtk::cairo::Context, width: i32, height: i32, scene: Scene) {
 #[cfg(test)]
 pub fn test_flow(app: &adw::Application) {
     use std::collections::HashSet;
+    use std::fs;
     use std::time::{Duration, Instant};
 
     const MOCK_WORKER: &str = r#"
@@ -724,24 +964,15 @@ for i, line in enumerate(request["lines"]):
 print("ok")
 "#;
 
-    let (window, reader) = build(app, Rc::new(Speech::for_live_test(MOCK_WORKER)));
-    assert!(reader.pause_sentences.is_active());
-    assert!(reader.automatic.is_active());
-    window.present();
-    reader.show();
-    // Without Azure credentials, Story starts cleanly in text mode with controls unlocked.
-    assert!(!reader.speaking.get());
-    assert!(reader.entry.is_sensitive());
-    assert!(reader.status.text().contains("Azure Speech"));
-    reader.replay.emit_clicked();
-    assert!(!reader.speaking.get());
-    assert!(reader.entry.is_sensitive());
-    assert!(reader.status.text().contains("Azure Speech"));
-
-    reader.automatic.set_active(false);
+    // 1. Verify runtime discovery loads external XML from stories/ and fits within 900×600.
+    let (default_win, default_reader) = build(app, Rc::new(Speech::for_live_test(MOCK_WORKER)));
+    assert!(default_reader.story_path.borrow().is_some());
+    assert!(default_reader.book.borrow().is_some());
+    default_win.present();
+    default_reader.show();
     let context = glib::MainContext::default();
     let deadline = Instant::now() + Duration::from_secs(2);
-    while (window.width() == 0 || window.height() == 0) && Instant::now() < deadline {
+    while (default_win.width() == 0 || default_win.height() == 0) && Instant::now() < deadline {
         context.iteration(false);
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -751,37 +982,220 @@ print("ok")
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(
-        window.width() > 0
-            && window.height() > 0
-            && window.width() <= 900
-            && window.height() <= 600,
+        default_win.width() > 0
+            && default_win.height() > 0
+            && default_win.width() <= 900
+            && default_win.height() <= 600,
         "Story window size invalid or exceeded 900×600: {}×{}",
-        window.width(),
-        window.height()
+        default_win.width(),
+        default_win.height()
     );
     for (name, widget) in [
-        ("entry", reader.entry.upcast_ref::<gtk::Widget>()),
-        ("skip", reader.skip.upcast_ref()),
-        ("next", reader.next.upcast_ref()),
-        ("automatic", reader.automatic.upcast_ref()),
-        ("pause_sentences", reader.pause_sentences.upcast_ref()),
-        ("english", reader.english.upcast_ref()),
-        ("illustration", reader.illustration.upcast_ref()),
+        ("entry", default_reader.entry.upcast_ref::<gtk::Widget>()),
+        ("skip", default_reader.skip.upcast_ref()),
+        ("next", default_reader.next.upcast_ref()),
+        ("automatic", default_reader.automatic.upcast_ref()),
+        (
+            "pause_sentences",
+            default_reader.pause_sentences.upcast_ref(),
+        ),
+        ("english", default_reader.english.upcast_ref()),
+        ("illustration", default_reader.illustration.upcast_ref()),
     ] {
-        let bounds = widget.compute_bounds(&window).unwrap();
+        let bounds = widget.compute_bounds(&default_win).unwrap();
         assert!(
-            bounds.y() >= 0.0 && bounds.y() + bounds.height() <= window.height() as f32,
+            bounds.y() >= 0.0 && bounds.y() + bounds.height() <= default_win.height() as f32,
             "Widget {name} out of bounds: {bounds:?} in {}×{}",
-            window.width(),
-            window.height()
+            default_win.width(),
+            default_win.height()
         );
     }
-    assert!(!reader.transcript.text().contains("It is Saturday"));
+    default_win.close();
+
+    // 2. Verify unloaded state when no XML file is loaded yet, then load a story XML file at runtime.
+    let missing_file = std::env::temp_dir().join("nonexistent-story-xml-test.xml");
+    let (window, reader, startup_error) = build_with_story(
+        app,
+        Rc::new(Speech::for_live_test(MOCK_WORKER)),
+        Some(&missing_file),
+    );
+    assert!(startup_error.is_some());
+    assert!(reader.book.borrow().is_none());
+    window.present();
+    reader.show();
+    assert!(!reader.entry.is_sensitive());
+    assert!(!reader.restart.is_sensitive());
+
+    let primary_story_file = std::env::temp_dir().join(format!(
+        "swedish-reader-flow-{}.xml",
+        glib::uuid_string_random()
+    ));
+    fs::write(
+        &primary_story_file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<story version="1.0" id="reader-flow" start="step-one" outing-hub="step-hub">
+  <meta>
+    <title> stationen &amp; torget </title>
+    <subtitle>Loaded from XML</subtitle>
+  </meta>
+  <cast protagonist="you" responder="companion" narrator="narrator">
+    <actor id="narrator" label="Berättaren" role="lead" voices="mattias"/>
+    <actor id="you" label="Du" role="lead" voices="mattias"/>
+    <actor id="companion" label="Vännen" role="lead" voices="sofie"/>
+  </cast>
+  <ending title="Resan klar · Slut">
+    <line actor="companion">
+      <sv>Vi ses nästa gång!</sv>
+      <lit>We see-each-other next time!</lit>
+      <en>See you next time!</en>
+    </line>
+  </ending>
+  <pages>
+    <page id="step-one" scene="home">
+      <title>
+        <sv>Första kapitlet</sv>
+        <lit>First chapter-the</lit>
+        <en>Chapter One</en>
+      </title>
+      <setup>
+        <line actor="narrator">
+          <sv>Klockan är nio. Ni står i hallen med ryggsäcken.</sv>
+          <lit>Clock-the is nine. You stand in hall-the with backpack-the.</lit>
+          <en>It is nine o'clock. You are standing in the hall with the backpack.</en>
+        </line>
+      </setup>
+      <question>
+        <sv>Har du biljetterna?</sv>
+        <lit>Have you tickets-the?</lit>
+        <en>Do you have the tickets?</en>
+      </question>
+      <choices>
+        <choice next="step-two">
+          <say>
+            <sv>Ja, de ligger i fickan.</sv>
+            <lit>Yes, they lie in pocket-the.</lit>
+            <en>Yes, they are in my pocket.</en>
+          </say>
+          <reply>
+            <sv>Toppen, då går vi.</sv>
+            <lit>Great, then go we.</lit>
+            <en>Great, let's go then.</en>
+          </reply>
+        </choice>
+        <choice>
+          <say>
+            <sv>Jag åt upp dem till frukost.</sv>
+            <lit>I ate up them for breakfast.</lit>
+            <en>I ate them for breakfast.</en>
+          </say>
+          <reply>
+            <sv>Papper mättar väldigt dåligt.</sv>
+            <lit>Paper fills very poorly.</lit>
+            <en>Paper is not very filling.</en>
+          </reply>
+        </choice>
+        <choice>
+          <say>
+            <sv>Vi tar luftballongen i stället.</sv>
+            <lit>We take hot-air-balloon-the instead.</lit>
+            <en>Let's take the hot-air balloon instead.</en>
+          </say>
+          <reply>
+            <sv>Det blåser lite för mycket i dag.</sv>
+            <lit>It blows little too much in day.</lit>
+            <en>It is a bit too windy today.</en>
+          </reply>
+        </choice>
+        <choice>
+          <say>
+            <sv>Hunden lånade dem.</sv>
+            <lit>Dog-the borrowed them.</lit>
+            <en>The dog borrowed them.</en>
+          </say>
+          <reply>
+            <sv>Vi har ingen hund.</sv>
+            <lit>We have no dog.</lit>
+            <en>We don't have a dog.</en>
+          </reply>
+        </choice>
+      </choices>
+    </page>
+    <page id="step-two" scene="train">
+      <title><sv>Vid spåret</sv><lit>By track-the</lit><en>By the platform</en></title>
+      <question>
+        <sv>Vilken vagn ska vi ta?</sv>
+        <lit>Which carriage shall we take?</lit>
+        <en>Which carriage should we take?</en>
+      </question>
+      <choices>
+        <choice next="step-hub">
+          <say><sv>Vagn tre här framme.</sv><lit>Carriage three here in-front.</lit><en>Carriage three up ahead.</en></say>
+          <reply><sv>Där finns lediga platser.</sv><lit>There exist free seats.</lit><en>There are free seats there.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Vi sitter på taket.</sv><lit>We sit on roof-the.</lit><en>Let's sit on the roof.</en></say>
+          <reply><sv>Kontaktledningen säger nej.</sv><lit>Overhead-wire-the says no.</lit><en>The overhead wire says no.</en></reply>
+        </choice>
+      </choices>
+    </page>
+    <page id="step-hub" scene="city">
+      <title><sv>Framme på torget</sv><lit>Arrived on square-the</lit><en>At the square</en></title>
+      <question>
+        <sv>Vart går vi nu?</sv>
+        <lit>Where-to go we now?</lit>
+        <en>Where shall we go now?</en>
+      </question>
+      <choices>
+        <choice next="step-market">
+          <say><sv>Vi kollar bokhandeln.</sv><lit>We check bookshop-the.</lit><en>Let's check out the bookshop.</en></say>
+          <reply><sv>Bra idé!</sv><lit>Good idea!</lit><en>Good idea!</en></reply>
+        </choice>
+        <choice next="done">
+          <say><sv>Vi åker hem direkt.</sv><lit>We travel home directly.</lit><en>Let's head straight home.</en></say>
+          <reply><sv>Hem ljuva hem.</sv><lit>Home sweet home.</lit><en>Home sweet home.</en></reply>
+        </choice>
+      </choices>
+    </page>
+    <page id="step-market" scene="shop">
+      <title><sv>I bokhandeln</sv><lit>In bookshop-the</lit><en>In the bookshop</en></title>
+      <question>
+        <sv>Hittade du en bok?</sv>
+        <lit>Found you a book?</lit>
+        <en>Did you find a book?</en>
+      </question>
+      <choices>
+        <choice next="done">
+          <say><sv>Ja, en svensk roman.</sv><lit>Yes, a Swedish novel.</lit><en>Yes, a Swedish novel.</en></say>
+          <reply><sv>Perfekt kvällsläsning.</sv><lit>Perfect evening-reading.</lit><en>Perfect evening reading.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Jag köpte bokhyllan.</sv><lit>I bought bookshelf-the.</lit><en>I bought the bookshelf.</en></say>
+          <reply><sv>Den tillhör butiken.</sv><lit>It belongs-to shop-the.</lit><en>That belongs to the shop.</en></reply>
+        </choice>
+      </choices>
+    </page>
+  </pages>
+</story>"#,
+    )
+    .unwrap();
+    reader.load_file(&primary_story_file).unwrap();
+    assert!(reader.pause_sentences.is_active());
+    assert!(reader.automatic.is_active());
+    assert!(!reader.speaking.get());
+    assert!(reader.entry.is_sensitive());
+    assert!(reader.status.text().contains("Azure Speech"));
+    reader.replay.emit_clicked();
+    assert!(!reader.speaking.get());
+    assert!(reader.entry.is_sensitive());
+    assert!(reader.status.text().contains("Azure Speech"));
+
+    reader.automatic.set_active(false);
+    assert!(!reader.transcript.text().contains("It is nine o'clock"));
     reader.english.set_active(true);
     assert!(reader.transcript.text().contains(
-        "Det är lördag. Du och din fru står i köket och planerar dagen.\n\
-         It is Saturday. You and your wife stand in kitchen-the and plan day-the.\n\
-         It is Saturday. You and your wife are in the kitchen planning the day."
+        "Klockan är nio. Ni står i hallen med ryggsäcken.\n\
+         Clock-the is nine. You stand in hall-the with backpack-the.\n\
+         It is nine o'clock. You are standing in the hall with the backpack."
     ));
     let first_choice = reader.choices[0]
         .child()
@@ -791,6 +1205,7 @@ print("ok")
     assert_eq!(first_choice.text().lines().count(), 3);
     reader.english.set_active(false);
     assert_eq!(first_choice.text().lines().count(), 1);
+
     let window_keys = (0..window.observe_controllers().n_items())
         .filter_map(|index| window.observe_controllers().item(index))
         .filter_map(|controller| controller.downcast::<gtk::EventControllerKey>().ok())
@@ -839,7 +1254,7 @@ print("ok")
         reader
             .status
             .text()
-            .starts_with("Speaking Swedish: En lagom äventyrlig lördag")
+            .starts_with("Speaking Swedish: Första kapitlet")
     );
     wait_until_paused(&reader);
     assert!(window_keys.emit_by_name::<bool>(
@@ -850,7 +1265,7 @@ print("ok")
             &gtk::gdk::ModifierType::empty()
         ],
     ));
-    assert!(reader.status.text().contains("Det är lördag."));
+    assert!(reader.status.text().contains("Klockan är nio."));
     wait_until_paused(&reader);
     assert!(reader.status.text().contains("Paused after sentence"));
     assert!(window_keys.emit_by_name::<bool>(
@@ -956,6 +1371,8 @@ print("ok")
     let wrong = reader
         .book
         .borrow()
+        .as_ref()
+        .unwrap()
         .page()
         .choices
         .iter()
@@ -964,12 +1381,14 @@ print("ok")
     reader.choices[wrong].emit_clicked();
     assert!(reader.next.is_sensitive());
     assert!(!reader.entry.is_sensitive());
-    assert!(reader.transcript.text().contains("Din fru"));
+    assert!(reader.transcript.text().contains("Vännen"));
     reader.next.emit_clicked();
-    assert_eq!(reader.book.borrow().page().id, "home-weather");
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-one");
     let right = reader
         .book
         .borrow()
+        .as_ref()
+        .unwrap()
         .page()
         .choices
         .iter()
@@ -977,12 +1396,11 @@ print("ok")
         .unwrap()
         .line
         .swedish
-        .to_string();
+        .clone();
     reader.entry.set_text(&right);
     reader.entry.emit_activate();
     reader.next.emit_clicked();
-    assert_eq!(reader.book.borrow().page().id, "home-keys");
-    // Skipping cancels an in-flight Azure synthesis request and unlocks the next page.
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-two");
     reader.speak();
     assert!(
         reader
@@ -991,7 +1409,7 @@ print("ok")
             .contains("Getting Swedish audio from Azure")
     );
     reader.skip.emit_clicked();
-    assert_eq!(reader.book.borrow().page().id, "home-plan");
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-hub");
     assert!(reader.entry.is_sensitive());
     reader.speech.disable_azure();
     reader.automatic.set_active(true);
@@ -1002,15 +1420,13 @@ print("ok")
     );
     assert!(reader.entry.is_sensitive());
     reader.automatic.set_active(false);
-    reader.answer("Vi går till Willys och handlar.");
+    reader.answer("Vi kollar bokhandeln.");
     reader.next.emit_clicked();
-    assert_eq!(reader.book.borrow().page().id, "shop-list");
-    reader.skip.emit_clicked();
     assert_eq!(
-        reader.book.borrow().page().title.swedish,
-        "Något mer på listan"
+        reader.book.borrow().as_ref().unwrap().page().id,
+        "step-market"
     );
-    while !reader.book.borrow().finished {
+    while !reader.book.borrow().as_ref().unwrap().finished {
         reader.skip.emit_clicked();
     }
     assert_eq!(
@@ -1018,6 +1434,68 @@ print("ok")
         Some("Ny utflykt · New outing")
     );
     reader.next.emit_clicked();
-    assert_eq!(reader.book.borrow().page().id, "home-plan");
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-hub");
+    let _ = fs::remove_file(&primary_story_file);
+
+    // 3. Verify switching to another external custom XML file at runtime and rejecting broken XML.
+    let custom_file = std::env::temp_dir().join(format!(
+        "swedish-custom-story-{}.xml",
+        glib::uuid_string_random()
+    ));
+    fs::write(
+        &custom_file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<story version="1.0" id="custom-cafe">
+  <meta>
+    <title>Kafébesöket</title>
+    <subtitle>External XML test</subtitle>
+  </meta>
+  <cast protagonist="you" responder="staff" narrator="narrator">
+    <actor id="narrator" label="Berättaren" role="lead" voices="mattias"/>
+    <actor id="you" label="Du" role="lead" voices="mattias"/>
+    <actor id="staff" label="Kafépersonalen" role="guest" voices="hillevi"/>
+  </cast>
+  <ending title="Mätt och belåten">
+    <line actor="staff">
+      <sv>Välkommen åter!</sv>
+      <en>Welcome back!</en>
+    </line>
+  </ending>
+  <pages>
+    <page id="start" scene="city">
+      <title><sv>Vid disken</sv><en>At the counter</en></title>
+      <question><sv>En kaffe?</sv><en>A coffee?</en></question>
+      <choices>
+        <choice next="done">
+          <say><sv>Ja tack!</sv><en>Yes please!</en></say>
+          <reply><sv>Varsågod.</sv><en>Here you go.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>En skruvmejsel, tack.</sv><en>A screwdriver, please.</en></say>
+          <reply><sv>Fel butik!</sv><en>Wrong shop!</en></reply>
+        </choice>
+      </choices>
+    </page>
+  </pages>
+</story>"#,
+    )
+    .unwrap();
+    reader.load_file(&custom_file).unwrap();
+    assert_eq!(reader.header_title.title().as_str(), "Kafébesöket");
+    assert_eq!(reader.title.text().as_str(), "Vid disken");
+    assert!(reader.choices[0].is_visible() && reader.choices[1].is_visible());
+    assert!(!reader.choices[2].is_visible() && !reader.choices[3].is_visible());
+    fs::write(&custom_file, "<story version=\"1.0\"><broken>").unwrap();
+    assert!(reader.load_file(&custom_file).is_err());
+    assert_eq!(reader.title.text().as_str(), "Vid disken");
+    let _ = fs::remove_file(&custom_file);
+    reader.answer("Ja tack!");
+    reader.next.emit_clicked();
+    assert!(reader.book.borrow().as_ref().unwrap().finished);
+    assert_eq!(reader.title.text().as_str(), "Mätt och belåten");
+    assert_eq!(
+        reader.next.label().as_deref(),
+        Some("Börja om · Play again")
+    );
     window.close();
 }

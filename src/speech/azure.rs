@@ -1,6 +1,6 @@
 use super::Timing;
 use adw::glib;
-use learn_swedish::adventure::Actor;
+use learn_swedish::adventure::ActorSpec;
 use learn_swedish::lesson::{Phrase, Voice};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -351,28 +351,42 @@ struct Style {
 
 #[derive(Default)]
 pub(super) struct Cast {
-    guests: HashMap<&'static str, Style>,
+    specs: Vec<ActorSpec>,
+    guests: HashMap<String, Style>,
 }
 
 impl Cast {
+    pub(super) fn set_specs(&mut self, specs: Vec<ActorSpec>) {
+        self.specs = specs;
+        self.guests.clear();
+    }
+
+    pub(super) fn recast_guests(&mut self) {
+        self.guests.clear();
+    }
+
     pub(super) fn utterance(&mut self, phrase: &Phrase) -> Utterance {
         Utterance {
             text: phrase.swedish.clone(),
-            style: self.style(phrase.speaker.expect("Story phrases have speakers")),
+            style: self.style(
+                phrase
+                    .speaker
+                    .as_deref()
+                    .expect("Story phrases have speakers"),
+            ),
         }
     }
 
-    fn style(&mut self, speaker: &'static str) -> Style {
-        if speaker == Actor::Narrator.name() || speaker == Actor::Husband.name() {
+    fn style(&mut self, speaker: &str) -> Style {
+        let spec = self
+            .specs
+            .iter()
+            .find(|spec| spec.label == speaker || spec.id == speaker);
+        if let Some(spec) = spec
+            && spec.lead
+        {
             return Style {
-                voice: Voice::Mattias,
-                pitch: 0,
-                rate: 0,
-            };
-        }
-        if speaker == Actor::Wife.name() {
-            return Style {
-                voice: Voice::Sofie,
+                voice: spec.voices[0],
                 pitch: 0,
                 rate: 0,
             };
@@ -380,28 +394,27 @@ impl Cast {
         if let Some(style) = self.guests.get(speaker) {
             return *style;
         }
-        let voices: &[Voice] = if [Actor::Police, Actor::ShopAssistant, Actor::BusDriver]
-            .iter()
-            .any(|actor| actor.name() == speaker)
-        {
-            &[Voice::Sofie, Voice::Hillevi]
-        } else if [Actor::Conductor, Actor::DogWalker, Actor::Passenger]
-            .iter()
-            .any(|actor| actor.name() == speaker)
-        {
-            &[Voice::Mattias]
-        } else {
-            &[Voice::Sofie, Voice::Mattias, Voice::Hillevi]
-        };
-        // Pick randomly among the least-used guest voices. Prefer a female voice on
-        // an otherwise equal choice because Mattias already reads two lead roles.
-        let rank = |voice| {
-            let count = self
+        let voices: Vec<Voice> = spec.map_or_else(
+            || vec![Voice::Sofie, Voice::Mattias, Voice::Hillevi],
+            |spec| spec.voices.clone(),
+        );
+        // Pick randomly among the least-used guest voices, deprioritizing any voice
+        // that already carries multiple lead roles.
+        let rank = |voice: Voice| {
+            let guest_count = self
                 .guests
                 .values()
                 .filter(|style| style.voice == voice)
                 .count();
-            (count, voice == Voice::Mattias)
+            let lead_count = self
+                .specs
+                .iter()
+                .filter(|spec| spec.lead && spec.voices.first() == Some(&voice))
+                .count();
+            (
+                guest_count,
+                lead_count > 1 || (self.specs.is_empty() && voice == Voice::Mattias),
+            )
         };
         let best = voices.iter().copied().map(rank).min().unwrap();
         let candidates: Vec<_> = voices
@@ -422,7 +435,7 @@ impl Cast {
             &available
         };
         let style = available[random_index(available.len())];
-        self.guests.insert(speaker, style);
+        self.guests.insert(speaker.to_owned(), style);
         style
     }
 }
@@ -438,28 +451,60 @@ mod tests {
     #[test]
     fn the_main_cast_is_fixed_and_guest_sofie_has_her_own_delivery() {
         let mut cast = Cast::default();
-        let husband = cast.style(Actor::Husband.name());
-        let wife = cast.style(Actor::Wife.name());
-        assert_eq!(husband, cast.style(Actor::Narrator.name()));
-        assert_eq!(husband.voice, Voice::Mattias);
+        cast.set_specs(vec![
+            ActorSpec {
+                id: "narrator".into(),
+                label: "Narrator".into(),
+                lead: true,
+                voices: vec![Voice::Mattias],
+            },
+            ActorSpec {
+                id: "protagonist".into(),
+                label: "Protagonist".into(),
+                lead: true,
+                voices: vec![Voice::Mattias],
+            },
+            ActorSpec {
+                id: "companion".into(),
+                label: "Companion".into(),
+                lead: true,
+                voices: vec![Voice::Sofie],
+            },
+            ActorSpec {
+                id: "guest_one".into(),
+                label: "Guest One".into(),
+                lead: false,
+                voices: vec![Voice::Hillevi, Voice::Sofie, Voice::Mattias],
+            },
+            ActorSpec {
+                id: "guest_two".into(),
+                label: "Guest Two".into(),
+                lead: false,
+                voices: vec![Voice::Hillevi, Voice::Sofie, Voice::Mattias],
+            },
+        ]);
+        let protagonist = cast.style("Protagonist");
+        let companion = cast.style("Companion");
+        assert_eq!(protagonist, cast.style("Narrator"));
+        assert_eq!(protagonist.voice, Voice::Mattias);
         assert_eq!(
-            wife,
+            companion,
             Style {
                 voice: Voice::Sofie,
                 pitch: 0,
                 rate: 0
             }
         );
-        let shop = cast.style(Actor::ShopAssistant.name());
-        let driver = cast.style(Actor::BusDriver.name());
-        assert!([shop.voice, driver.voice].contains(&Voice::Hillevi));
-        let sofie = [shop, driver]
+        let first_guest = cast.style("Guest One");
+        let second_guest = cast.style("Guest Two");
+        assert!([first_guest.voice, second_guest.voice].contains(&Voice::Hillevi));
+        let sofie = [first_guest, second_guest]
             .into_iter()
             .find(|style| style.voice == Voice::Sofie)
             .unwrap();
-        assert_ne!(sofie.pitch, wife.pitch);
-        assert_ne!(sofie.rate, wife.rate);
-        assert_eq!(driver, cast.style(Actor::BusDriver.name()));
+        assert_ne!(sofie.pitch, companion.pitch);
+        assert_ne!(sofie.rate, companion.rate);
+        assert_eq!(second_guest, cast.style("Guest Two"));
     }
 
     #[test]

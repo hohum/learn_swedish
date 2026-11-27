@@ -93,6 +93,9 @@ for crate in "$work"/crates/*; do
         \( -iname 'license*' -o -iname 'copying*' -o -iname 'notice*' -o -iname 'copyright*' \))
 done
 cp README.md LICENSE scripts/install_windows_speech.ps1 "$bundle/"
+mkdir -p "$bundle/stories" "$bundle/docs"
+cp stories/*.xml stories/*.xsd "$bundle/stories/"
+cp docs/story-xml-spec.md "$bundle/docs/"
 
 (cd "$work" && zip -q -r "$name.zip" "$name")
 mv -f "$work/$name.zip" "$root/dist/$name.zip"

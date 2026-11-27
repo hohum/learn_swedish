@@ -118,6 +118,34 @@ The original location illustrations are drawn as scalable vector scenes by the
 app: home, forest, supermarket, road, furniture store, railway and city café.
 They need no downloads, network access or external image models.
 
+### Custom XML stories (no recompilation needed)
+
+Story adventure books are plain UTF-8 XML files loaded dynamically at runtime —
+no story text or story filename is compiled into the binary. At startup, the
+reader scans `stories/` for `.xml` books (such as the bundled
+[stories/en-lagom-aventyrlig-lordag.xml](stories/en-lagom-aventyrlig-lordag.xml))
+and loads the first one it finds.
+
+To read any other story formatted according to the XML specification without
+recompiling the app:
+
+- Click **Open story…** in the story window's top-left header bar and choose any
+  `.xml` story file, or
+- Launch the app with a story path on the command line:
+  ```sh
+  learn-swedish path/to/story.xml
+  # or: learn-swedish --story path/to/story.xml
+  ```
+- You can also set `LEARN_SWEDISH_STORY=/path/to/story.xml` to override the
+  default startup book.
+
+Every loaded file is checked before replacing the current session (cast voices,
+2–4 distinct choices per page, acyclic paths reaching `"done"`, and optional
+randomized encounter pools). Authoring rules, element reference, and a minimal
+two-choice example (`fika.xml`) are documented in
+[docs/story-xml-spec.md](docs/story-xml-spec.md), with an accompanying W3C XML
+Schema at [stories/story-v1.xsd](stories/story-v1.xsd).
+
 ### Live adventure speech (Azure API key required)
 
 Story adventure audio is synthesized online on demand — **you need your own
@@ -169,7 +197,7 @@ keyboard voice download below.
 
 ## Download and run on Windows 11
 
-Download `learn-swedish-0.5.0-windows-x64.zip` from
+Download `learn-swedish-0.6.0-windows-x64.zip` from
 [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
 inside the extracted folder. Keep the extracted files together. No WSL,
@@ -212,7 +240,7 @@ Ubuntu releases or ARM devices.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.5.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.6.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 
@@ -534,9 +562,13 @@ without modifying the downloaded model. No engine or model is bundled in this pr
 ## Development
 
 - [src/lesson.rs](src/lesson.rs): curriculum and manual lesson state, with no GUI dependencies.
+- [src/adventure.rs](src/adventure.rs) & [src/adventure/xml.rs](src/adventure/xml.rs): zero-dependency Story XML v1.0 parser, graph/encounter validator, and dynamic book state.
+- [src/story_ui.rs](src/story_ui.rs): Story adventure reader, vector scenes, and runtime **Open story…** loader.
 - [src/main.rs](src/main.rs): native interface and input handling.
 - [src/speech.rs](src/speech.rs): offline Azure/Piper preparation and asynchronous WAV playback.
 - [src/speech/azure.rs](src/speech/azure.rs): on-demand casting, requests, and session cache.
+- [stories/en-lagom-aventyrlig-lordag.xml](stories/en-lagom-aventyrlig-lordag.xml) & [stories/story-v1.xsd](stories/story-v1.xsd): exported choose-your-own-adventure book and W3C XML Schema.
+- [docs/story-xml-spec.md](docs/story-xml-spec.md): Module 2 Story XML v1.0 specification and minimal example.
 - [scripts/live_azure_speech.py](scripts/live_azure_speech.py): multi-voice Azure synthesis and timing extraction.
 - [scripts/prepare_speech.py](scripts/prepare_speech.py): full-phrase neural audio and measured word timings; embedded into the Rust preparation command.
 - [scripts/prepare_azure_speech.py](scripts/prepare_azure_speech.py): hidden local credential prompt, Azure Sofie recordings and measured word boundaries; embedded into the Rust Azure preparation command.

@@ -17,10 +17,10 @@ pub struct Card {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Phrase {
     pub english: String,
-    pub literal: Option<&'static str>,
+    pub literal: Option<String>,
     pub swedish: String,
     pub voice: Option<Voice>,
-    pub speaker: Option<&'static str>,
+    pub speaker: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

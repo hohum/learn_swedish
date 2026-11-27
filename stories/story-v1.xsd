@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+             schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+
+  <xs:simpleType name="NonEmptyString">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SceneType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="home"/>
+      <xs:enumeration value="woods"/>
+      <xs:enumeration value="shop"/>
+      <xs:enumeration value="road"/>
+      <xs:enumeration value="ikea"/>
+      <xs:enumeration value="train"/>
+      <xs:enumeration value="city"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="lead"/>
+      <xs:enumeration value="guest"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ChoiceRotationType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="none"/>
+      <xs:enumeration value="by-index"/>
+      <xs:enumeration value="random"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="TitleTextType">
+    <xs:sequence>
+      <xs:element name="sv" type="NonEmptyString"/>
+      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+      <xs:element name="en" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="actor" type="NonEmptyString" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="SpokenLineType">
+    <xs:sequence>
+      <xs:element name="sv" type="NonEmptyString"/>
+      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+      <xs:element name="en" type="NonEmptyString"/>
+    </xs:sequence>
+    <xs:attribute name="actor" type="NonEmptyString" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="DialogueLineType">
+    <xs:sequence>
+      <xs:element name="sv" type="NonEmptyString"/>
+      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+      <xs:element name="en" type="NonEmptyString"/>
+    </xs:sequence>
+    <xs:attribute name="actor" type="NonEmptyString" use="required"/>
+  </xs:complexType>
+
+  <xs:element name="story">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="meta">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="title" type="NonEmptyString"/>
+              <xs:element name="subtitle" type="NonEmptyString" minOccurs="0"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="cast">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="actor" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="id" type="NonEmptyString" use="required"/>
+                  <xs:attribute name="label" type="NonEmptyString" use="required"/>
+                  <xs:attribute name="role" type="RoleType" use="optional" default="guest"/>
+                  <xs:attribute name="voices" type="NonEmptyString" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="protagonist" type="NonEmptyString" use="optional"/>
+            <xs:attribute name="responder" type="NonEmptyString" use="optional"/>
+            <xs:attribute name="narrator" type="NonEmptyString" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="ending" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="line" type="SpokenLineType"/>
+            </xs:sequence>
+            <xs:attribute name="title" type="NonEmptyString" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="pages">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="page" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="title" type="TitleTextType"/>
+                    <xs:element name="setup" minOccurs="0">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="line" type="DialogueLineType" minOccurs="0" maxOccurs="unbounded"/>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="question" type="SpokenLineType"/>
+                    <xs:element name="choices">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="choice" minOccurs="2" maxOccurs="4">
+                            <xs:complexType>
+                              <xs:sequence>
+                                <xs:element name="say" type="SpokenLineType"/>
+                                <xs:element name="reply" type="SpokenLineType"/>
+                              </xs:sequence>
+                              <xs:attribute name="next" type="NonEmptyString" use="optional"/>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="id" type="NonEmptyString" use="required"/>
+                  <xs:attribute name="scene" type="SceneType" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="choice-rotation" type="ChoiceRotationType" use="optional" default="none"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="encounters" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="distractors" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="distractor" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="say" type="SpokenLineType"/>
+                          <xs:element name="reply" type="SpokenLineType"/>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="route" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="distractors" minOccurs="0">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="distractor" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:sequence>
+                                <xs:element name="say" type="SpokenLineType"/>
+                                <xs:element name="reply" type="SpokenLineType"/>
+                              </xs:sequence>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="stop" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="title" type="TitleTextType"/>
+                          <xs:element name="question" type="SpokenLineType"/>
+                          <xs:element name="encounter" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:sequence>
+                                <xs:element name="setup" type="DialogueLineType"/>
+                                <xs:element name="say" type="SpokenLineType"/>
+                                <xs:element name="reply" type="SpokenLineType"/>
+                              </xs:sequence>
+                              <xs:attribute name="id" type="NonEmptyString" use="required"/>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="after" type="NonEmptyString" use="required"/>
+                        <xs:attribute name="before" type="NonEmptyString" use="required"/>
+                        <xs:attribute name="scene" type="SceneType" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="id" type="NonEmptyString" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="version" type="NonEmptyString" use="required"/>
+      <xs:attribute name="id" type="NonEmptyString" use="optional"/>
+      <xs:attribute name="start" type="NonEmptyString" use="optional"/>
+      <xs:attribute name="outing-hub" type="NonEmptyString" use="optional"/>
+      <xs:attribute ref="xml:lang" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>
