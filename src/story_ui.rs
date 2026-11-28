@@ -11,12 +11,20 @@ struct Reader {
     story_path: RefCell<Option<PathBuf>>,
     speech: Rc<Speech>,
     header_title: adw::WindowTitle,
+    prev_page: gtk::Button,
+    pages_menu: gtk::MenuButton,
+    next_page: gtk::Button,
+    #[cfg(test)]
+    header_spinner: gtk::Spinner,
+    #[cfg(test)]
+    loading_spinner: gtk::Spinner,
     title: gtk::Label,
     illustration: gtk::DrawingArea,
     scene: Rc<Cell<Scene>>,
     transcript: gtk::Label,
     text_scroll: gtk::ScrolledWindow,
     choice_scroll: gtk::ScrolledWindow,
+    choice_box: gtk::Box,
     choices: [gtk::Button; 8],
     entry: gtk::Entry,
     submit: gtk::Button,
@@ -69,6 +77,10 @@ impl Reader {
     fn controls(&self) {
         let borrow = self.book.borrow();
         let Some(book) = borrow.as_ref() else {
+            self.prev_page.set_sensitive(false);
+            self.pages_menu.set_sensitive(false);
+            self.pages_menu.set_label("Pages");
+            self.next_page.set_sensitive(false);
             self.entry.set_sensitive(false);
             self.submit.set_sensitive(false);
             self.skip.set_sensitive(false);
@@ -85,20 +97,30 @@ impl Reader {
             }
             return;
         };
-        let answering = !self.speaking.get() && book.selected.is_none() && !book.finished;
+        let page_total = book.pages.len();
+        self.prev_page.set_sensitive(book.can_go_back());
+        self.next_page.set_sensitive(book.can_go_forward());
+        self.pages_menu.set_sensitive(true);
+        self.pages_menu.set_label(&if book.finished {
+            format!("End / {page_total}")
+        } else {
+            format!("{} / {page_total}", book.current_index() + 1)
+        });
+        let can_type = !self.speaking.get() && !book.finished;
+        let can_pick_choice = !self.speech.is_loading() && !book.finished;
         let choice_count = book.page().choices.len();
-        self.entry.set_sensitive(answering);
+        self.entry.set_sensitive(can_type);
         self.entry.set_placeholder_text(Some(&format!(
             "1–{choice_count} or the full Swedish response"
         )));
-        self.submit.set_sensitive(answering);
+        self.submit.set_sensitive(can_type);
         self.entry.set_visible(!book.finished);
         self.submit.set_visible(!book.finished);
         self.skip.set_visible(!book.finished);
         self.choice_scroll.set_visible(!book.finished);
         for (index, choice) in self.choices.iter().enumerate() {
             choice.set_visible(index < choice_count);
-            choice.set_sensitive(answering && index < choice_count);
+            choice.set_sensitive(can_pick_choice && index < choice_count);
         }
         self.next
             .set_sensitive(!self.speaking.get() && (book.finished || book.selected.is_some()));
@@ -157,11 +179,18 @@ impl Reader {
     }
 
     fn show(self: &Rc<Self>) {
+        self.render_view(true, true);
+    }
+
+    fn render_view(self: &Rc<Self>, reset_choice_scroll: bool, auto_speak: bool) {
         self.speech.stop();
         self.speech.clear_last_sentence();
+        self.speaking.set(false);
         self.entry.set_text("");
         self.text_scroll.vadjustment().set_value(0.0);
-        self.choice_scroll.vadjustment().set_value(0.0);
+        if reset_choice_scroll {
+            self.choice_scroll.vadjustment().set_value(0.0);
+        }
         let borrow = self.book.borrow();
         let Some(book) = borrow.as_ref() else {
             drop(borrow);
@@ -185,7 +214,9 @@ impl Reader {
         self.scene.set(book.page().scene);
         self.illustration.queue_draw();
         let choice_count = book.page().choices.len();
-        let selected = book.selected.is_some();
+        let selected_choice = book.selected;
+        let selected_advances =
+            selected_choice.is_some_and(|i| book.page().choices[i].next.is_some());
         if book.finished {
             let ending = &book.story().ending;
             self.title.set_label(&ending.title);
@@ -204,16 +235,12 @@ impl Reader {
             }
         } else {
             self.title.set_label(&book.page().title.swedish);
-            self.next.set_label(
-                if book
-                    .selected
-                    .is_some_and(|i| book.page().choices[i].next.is_none())
-                {
+            self.next
+                .set_label(if selected_choice.is_some() && !selected_advances {
                     "Försök igen · Try again"
                 } else {
                     "Fortsätt · Continue"
-                },
-            );
+                });
         }
         let finished = book.finished;
         drop(borrow);
@@ -222,19 +249,27 @@ impl Reader {
         if !finished {
             self.speech
                 .show_transcript(&self.phrases(), &self.transcript);
-            if self.automatic.is_active() && self.speech.azure_enabled() {
+            if auto_speak && self.automatic.is_active() && self.speech.azure_enabled() {
                 self.speak();
             } else if self.speech.azure_enabled() {
-                self.status.set_label(&if selected {
-                    "Read the reply, then use Continue or Try again. Replay reads the exchange aloud.".into()
+                self.status.set_label(&if selected_choice.is_some() {
+                    if selected_advances {
+                        "Click Continue to move on, or pick any other option to change your answer.".into()
+                    } else {
+                        "Pick any other option directly to change your answer, or click Try again to view the full page.".into()
+                    }
                 } else {
                     format!(
                         "Choose 1–{choice_count} or type a full Swedish response. Replay reads this page aloud."
                     )
                 });
             } else {
-                self.status.set_label(&if selected {
-                    "Read the reply, then use Continue or Try again. Open Azure Speech above for live audio.".into()
+                self.status.set_label(&if selected_choice.is_some() {
+                    if selected_advances {
+                        "Click Continue to move on, or pick any other option to change your answer. Open Azure Speech above for live audio.".into()
+                    } else {
+                        "Pick any other option directly to change your answer, or click Try again to view the full page.".into()
+                    }
                 } else {
                     format!(
                         "Choose 1–{choice_count} or type a full Swedish response. Open Azure Speech above for live audio."
@@ -249,18 +284,28 @@ impl Reader {
         let Some(book) = borrow.as_ref() else {
             for button in &self.choices {
                 button.set_visible(false);
+                button.remove_css_class("selected-choice");
             }
             return;
         };
         let page_choices = &book.page().choices;
+        let selected = book.selected;
         for (index, button) in self.choices.iter().enumerate() {
             let Some(choice) = page_choices.get(index) else {
                 button.set_visible(false);
+                button.remove_css_class("selected-choice");
                 continue;
             };
             button.set_visible(true);
+            let is_selected = selected == Some(index);
+            if is_selected {
+                button.add_css_class("selected-choice");
+            } else {
+                button.remove_css_class("selected-choice");
+            }
             let label = button.child().unwrap().downcast::<gtk::Label>().unwrap();
-            let text = format!("{}. {}", index + 1, choice.line.swedish);
+            let prefix = if is_selected { "✓ " } else { "" };
+            let text = format!("{prefix}{}. {}", index + 1, choice.line.swedish);
             if self.english.is_active() {
                 let mut markup = glib::markup_escape_text(&text).to_string();
                 if let Some(literal) = &choice.line.literal {
@@ -283,8 +328,12 @@ impl Reader {
     }
 
     fn answer(self: &Rc<Self>, input: &str) {
-        if self.speaking.get() {
+        if self.speech.is_loading() {
             return;
+        }
+        if self.speaking.get() {
+            self.speech.stop();
+            self.speaking.set(false);
         }
         let result = {
             let mut borrow = self.book.borrow_mut();
@@ -294,7 +343,7 @@ impl Reader {
             book.answer(input)
         };
         match result {
-            Ok(_) => self.show(),
+            Ok(_) => self.render_view(false, true),
             Err(error) => self.status.set_label(&error),
         }
     }
@@ -315,6 +364,76 @@ impl Reader {
                 "Live Azure Speech is off. Story continues in text mode."
             });
         }
+    }
+
+    fn follow_choice(&self, active_phrase: Option<usize>) {
+        let active_choice = {
+            let borrow = self.book.borrow();
+            if let Some(book) = borrow.as_ref()
+                && book.selected.is_none()
+                && !book.finished
+            {
+                let first_choice_phrase = 2 + book.page().setup.len();
+                active_phrase
+                    .and_then(|idx| idx.checked_sub(first_choice_phrase))
+                    .filter(|&c| c < book.page().choices.len())
+            } else {
+                None
+            }
+        };
+        for (index, button) in self.choices.iter().enumerate() {
+            if Some(index) == active_choice {
+                button.add_css_class("speaking-choice");
+            } else {
+                button.remove_css_class("speaking-choice");
+            }
+        }
+        if let Some(choice_index) = active_choice {
+            let button = &self.choices[choice_index];
+            if !Self::scroll_choice_into_view(button, &self.choice_box, &self.choice_scroll) {
+                let weak_btn = button.downgrade();
+                let weak_box = self.choice_box.downgrade();
+                let weak_scroll = self.choice_scroll.downgrade();
+                glib::idle_add_local_once(move || {
+                    if let (Some(btn), Some(cbox), Some(cscroll)) = (
+                        weak_btn.upgrade(),
+                        weak_box.upgrade(),
+                        weak_scroll.upgrade(),
+                    ) {
+                        let _ = Self::scroll_choice_into_view(&btn, &cbox, &cscroll);
+                    }
+                });
+            }
+        }
+    }
+
+    fn scroll_choice_into_view(
+        button: &gtk::Button,
+        choice_box: &gtk::Box,
+        choice_scroll: &gtk::ScrolledWindow,
+    ) -> bool {
+        let Some(bounds) = button.compute_bounds(choice_box) else {
+            return false;
+        };
+        let adjustment = choice_scroll.vadjustment();
+        let page_size = adjustment.page_size();
+        let upper = adjustment.upper();
+        let top = f64::from(bounds.y());
+        let bottom = f64::from(bounds.y() + bounds.height());
+        if page_size <= 1.0 || upper + 2.0 < bottom {
+            return false;
+        }
+        if upper <= page_size + 1.0 {
+            return true;
+        }
+        let max_scroll = (upper - page_size).max(0.0);
+        let current = adjustment.value();
+        if top < current + 8.0 {
+            adjustment.set_value((top - 8.0).clamp(0.0, max_scroll));
+        } else if bottom + 8.0 > current + page_size {
+            adjustment.set_value((bottom - page_size + 12.0).clamp(0.0, max_scroll));
+        }
+        true
     }
 }
 
@@ -370,6 +489,18 @@ fn build_ui(
     initial_book: Option<Book>,
     initial_path: Option<PathBuf>,
 ) -> (adw::ApplicationWindow, Rc<Reader>) {
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(
+        "button.speaking-choice { outline: 2px solid #e5a50a; background-color: alpha(#f6d32d, 0.18); }
+         button.selected-choice { outline: 2px solid #3584e4; background-color: alpha(#3584e4, 0.14); }",
+    );
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
     if let Some(book) = &initial_book {
         speech.set_cast(&book.story().actors);
     }
@@ -396,10 +527,56 @@ fn build_ui(
         .build();
     stories_menu.set_widget_name("stories-menu");
     header.pack_start(&stories_menu);
+
+    let nav_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    nav_box.add_css_class("linked");
+    let prev_page = gtk::Button::with_label("‹");
+    prev_page.set_widget_name("nav-prev");
+    prev_page.set_tooltip_text(Some("Previous page"));
+    let pages_panel = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    pages_panel.set_margin_top(8);
+    pages_panel.set_margin_bottom(8);
+    pages_panel.set_margin_start(8);
+    pages_panel.set_margin_end(8);
+    let pages_search = gtk::SearchEntry::builder()
+        .placeholder_text("Search title, scene, or ID…")
+        .build();
+    let pages_variants = gtk::CheckButton::with_label("Show all pool & encounter variants");
+    let pages_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let pages_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_width(370)
+        .min_content_height(310)
+        .max_content_height(360)
+        .propagate_natural_height(true)
+        .child(&pages_list)
+        .build();
+    pages_panel.append(&pages_search);
+    pages_panel.append(&pages_variants);
+    pages_panel.append(&pages_scroll);
+    let pages_popover = gtk::Popover::builder().child(&pages_panel).build();
+    let pages_menu = gtk::MenuButton::builder()
+        .label("Pages")
+        .popover(&pages_popover)
+        .tooltip_text("Page navigator — jump to any page")
+        .build();
+    pages_menu.set_widget_name("pages-menu");
+    let next_page = gtk::Button::with_label("›");
+    next_page.set_widget_name("nav-next");
+    next_page.set_tooltip_text(Some("Next page"));
+    nav_box.append(&prev_page);
+    nav_box.append(&pages_menu);
+    nav_box.append(&next_page);
+    header.pack_start(&nav_box);
     let azure = gtk::Button::with_label("Azure Speech");
     azure.set_widget_name("azure-settings");
     azure.set_tooltip_text(Some("Set up live story audio"));
     header.pack_end(&azure);
+    let header_spinner = gtk::Spinner::new();
+    header_spinner.set_widget_name("azure-header-spinner");
+    header_spinner.set_tooltip_text(Some("Loading Swedish audio from Azure…"));
+    header_spinner.set_visible(false);
+    header.pack_end(&header_spinner);
     content.append(&header);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
     body.set_margin_start(14);
@@ -433,6 +610,7 @@ fn build_ui(
     transcript.set_margin_bottom(8);
     let text_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(110)
         .vexpand(true)
         .child(&transcript)
         .build();
@@ -450,6 +628,7 @@ fn build_ui(
     });
     let choice_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(110)
         .vexpand(true)
         .child(&choice_box)
         .build();
@@ -487,15 +666,23 @@ fn build_ui(
     options.append(&replay);
     options.append(&restart);
     body.append(&options);
+    let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let loading_spinner = gtk::Spinner::new();
+    loading_spinner.set_widget_name("azure-loading-spinner");
+    loading_spinner.set_valign(gtk::Align::Center);
+    loading_spinner.set_visible(false);
     let status = gtk::Label::new(None);
     status.set_wrap(true);
     status.set_xalign(0.0);
+    status.set_hexpand(true);
     status.add_css_class("dim-label");
     status.set_lines(3);
     status.set_ellipsize(gtk::pango::EllipsizeMode::End);
     status.set_selectable(true);
     status.connect_label_notify(|label| label.set_tooltip_text(Some(&label.text())));
-    body.append(&status);
+    status_row.append(&loading_spinner);
+    status_row.append(&status);
+    body.append(&status_row);
     let outer = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .child(&body)
@@ -509,17 +696,27 @@ fn build_ui(
         .default_height(600)
         .content(&content)
         .build();
+    speech.register_spinner(&header_spinner);
+    speech.register_spinner(&loading_spinner);
     let reader = Rc::new(Reader {
         book: RefCell::new(initial_book),
         story_path: RefCell::new(initial_path),
         speech,
         header_title,
+        prev_page: prev_page.clone(),
+        pages_menu,
+        next_page: next_page.clone(),
+        #[cfg(test)]
+        header_spinner,
+        #[cfg(test)]
+        loading_spinner,
         title,
         illustration,
         scene,
         transcript,
         text_scroll,
         choice_scroll,
+        choice_box,
         choices,
         entry,
         submit,
@@ -533,6 +730,14 @@ fn build_ui(
         restart: restart.clone(),
         speaking: Cell::new(false),
     });
+    reader.speech.set_phrase_listener({
+        let weak = Rc::downgrade(&reader);
+        move |active_phrase| {
+            if let Some(reader) = weak.upgrade() {
+                reader.follow_choice(active_phrase);
+            }
+        }
+    });
     stories_popover.connect_show(glib::clone!(
         #[weak]
         reader,
@@ -541,6 +746,88 @@ fn build_ui(
         #[weak]
         stories_list,
         move |popover| populate_stories_popover(popover, &stories_list, &reader, &window)
+    ));
+    prev_page.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        move |_| {
+            let moved = reader.book.borrow_mut().as_mut().is_some_and(Book::go_back);
+            if moved {
+                reader.show();
+            }
+        }
+    ));
+    next_page.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        move |_| {
+            let moved = reader
+                .book
+                .borrow_mut()
+                .as_mut()
+                .is_some_and(Book::go_forward);
+            if moved {
+                reader.show();
+            }
+        }
+    ));
+    pages_popover.connect_show(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        pages_list,
+        #[weak]
+        pages_search,
+        #[weak]
+        pages_variants,
+        move |popover| {
+            populate_pages_popover(
+                popover,
+                &pages_list,
+                &pages_search.text(),
+                pages_variants.is_active(),
+                &reader,
+            );
+            pages_search.grab_focus();
+        }
+    ));
+    pages_search.connect_search_changed(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        pages_popover,
+        #[weak]
+        pages_list,
+        #[weak]
+        pages_variants,
+        move |search| {
+            populate_pages_popover(
+                &pages_popover,
+                &pages_list,
+                &search.text(),
+                pages_variants.is_active(),
+                &reader,
+            );
+        }
+    ));
+    pages_variants.connect_toggled(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        pages_popover,
+        #[weak]
+        pages_list,
+        #[weak]
+        pages_search,
+        move |toggle| {
+            populate_pages_popover(
+                &pages_popover,
+                &pages_list,
+                &pages_search.text(),
+                toggle.is_active(),
+                &reader,
+            );
+        }
     ));
     azure.connect_clicked(glib::clone!(
         #[weak]
@@ -618,22 +905,38 @@ fn build_ui(
         #[weak]
         reader,
         move |_| {
-            let updated = {
+            enum Action {
+                None,
+                AdvancePage,
+                RetryCurrentPage,
+            }
+            let action = {
                 let mut borrow = reader.book.borrow_mut();
                 if let Some(book) = borrow.as_mut() {
                     if book.finished {
                         book.new_outing(random_index);
                         reader.speech.recast_guests();
+                        Action::AdvancePage
                     } else {
-                        book.continue_story();
+                        let was_wrong = book
+                            .selected
+                            .is_some_and(|idx| book.page().choices[idx].next.is_none());
+                        if was_wrong {
+                            book.clear_selection();
+                            Action::RetryCurrentPage
+                        } else {
+                            book.continue_story();
+                            Action::AdvancePage
+                        }
                     }
-                    true
                 } else {
-                    false
+                    Action::None
                 }
             };
-            if updated {
-                reader.show();
+            match action {
+                Action::AdvancePage => reader.show(),
+                Action::RetryCurrentPage => reader.render_view(false, false),
+                Action::None => {}
             }
         }
     ));
@@ -696,6 +999,93 @@ fn build_ui(
         }
     });
     (window, reader)
+}
+
+fn populate_pages_popover(
+    popover: &gtk::Popover,
+    list: &gtk::Box,
+    query: &str,
+    include_variants: bool,
+    reader: &Rc<Reader>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    let (entries, current_id) = {
+        let borrow = reader.book.borrow();
+        let Some(book) = borrow.as_ref() else {
+            list.append(&gtk::Label::new(Some("No story loaded.")));
+            return;
+        };
+        let current = (!book.finished).then(|| book.page().id.clone());
+        (book.navigator_entries(include_variants), current)
+    };
+    let needle = query.trim().to_lowercase();
+    let mut shown = 0usize;
+    for entry in entries {
+        let scene_name = entry.scene.as_str();
+        if !needle.is_empty()
+            && !entry.title_sv.to_lowercase().contains(&needle)
+            && !entry.title_en.to_lowercase().contains(&needle)
+            && !entry.id.to_lowercase().contains(&needle)
+            && !scene_name.contains(&needle)
+        {
+            continue;
+        }
+        let is_current = current_id.as_deref() == Some(entry.id.as_str());
+        let marker = if is_current {
+            "✓ "
+        } else if entry.visited {
+            "• "
+        } else {
+            "   "
+        };
+        let number = entry
+            .active_index
+            .map_or_else(|| "var".into(), |idx| (idx + 1).to_string());
+        let subtitle = if entry.title_en.is_empty() {
+            entry.id.clone()
+        } else {
+            format!("{} · {}", entry.title_en, entry.id)
+        };
+        let markup = format!(
+            "<b>{marker}{number}. {}</b> <span size=\"small\" alpha=\"70%\">[{scene_name}]</span>\n<span size=\"small\" alpha=\"75%\">{}</span>",
+            glib::markup_escape_text(&entry.title_sv),
+            glib::markup_escape_text(&subtitle)
+        );
+        let label = gtk::Label::new(None);
+        label.set_markup(&markup);
+        label.set_xalign(0.0);
+        label.set_wrap(true);
+        label.set_max_width_chars(46);
+        let button = gtk::Button::builder().child(&label).build();
+        button.add_css_class("flat");
+        let target_id = entry.id;
+        button.connect_clicked(glib::clone!(
+            #[weak]
+            popover,
+            #[weak]
+            reader,
+            move |_| {
+                popover.popdown();
+                let jumped = reader
+                    .book
+                    .borrow_mut()
+                    .as_mut()
+                    .is_some_and(|book| book.jump_to_id(&target_id, random_index));
+                if jumped {
+                    reader.show();
+                }
+            }
+        ));
+        list.append(&button);
+        shown += 1;
+    }
+    if shown == 0 {
+        let empty = gtk::Label::new(Some("No matching pages."));
+        empty.add_css_class("dim-label");
+        list.append(&empty);
+    }
 }
 
 fn populate_stories_popover(
@@ -821,12 +1211,14 @@ fn prompt_open_story(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
 
 fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
     let live = reader.speech.azure_enabled();
+    let remembered = reader.speech.azure_remembered();
+    let has_key = reader.speech.azure_has_key();
     let dialog = gtk::Window::builder()
         .title("Live Azure Speech")
         .transient_for(window)
         .modal(true)
         .resizable(false)
-        .default_width(400)
+        .default_width(430)
         .build();
     let fields = gtk::Box::new(gtk::Orientation::Vertical, 8);
     fields.set_margin_top(16);
@@ -834,7 +1226,7 @@ fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
     fields.set_margin_start(16);
     fields.set_margin_end(16);
     let explanation = gtk::Label::new(Some(
-        "Azure receives the authored Swedish lines you play. The app keeps the key for this session.",
+        "Azure receives the authored Swedish lines you play. Remembered keys are saved locally and enabled automatically at startup.",
     ));
     explanation.set_wrap(true);
     explanation.set_xalign(0.0);
@@ -844,10 +1236,10 @@ fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
         .text(reader.speech.azure_region())
         .build();
     let key = gtk::PasswordEntry::builder()
-        .placeholder_text(if live {
-            "Leave blank to keep the current key"
+        .placeholder_text(if has_key {
+            "Leave blank to keep saved/current key"
         } else {
-            "Azure Speech key"
+            "Azure Speech F0 / resource key"
         })
         .build();
     let region_label = gtk::Label::new(Some("Resource region"));
@@ -859,6 +1251,57 @@ fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
     fields.append(&region);
     fields.append(&key_label);
     fields.append(&key);
+
+    let remember_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let remember = gtk::CheckButton::with_label("Remember key on this computer");
+    remember.set_active(remembered || !live);
+    remember.set_hexpand(true);
+    remember_row.append(&remember);
+    if remembered {
+        let forget = gtk::Button::with_label("Forget saved key");
+        forget.connect_clicked(glib::clone!(
+            #[weak]
+            reader,
+            #[weak]
+            dialog,
+            move |_| {
+                reader.speech.stop();
+                reader.speech.forget_azure();
+                dialog.close();
+                reader
+                    .status
+                    .set_label("Saved Azure Speech key forgotten. Story continues in text mode.");
+            }
+        ));
+        remember_row.append(&forget);
+    }
+    fields.append(&remember_row);
+
+    let cached_clips = reader.speech.azure_cached_clips();
+    let cache_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let cache_label = gtk::Label::new(Some(&format!("Cached TTS clips: {cached_clips}")));
+    cache_label.set_xalign(0.0);
+    cache_label.set_hexpand(true);
+    cache_label.add_css_class("dim-label");
+    let clear_cache = gtk::Button::with_label("Clear TTS cache");
+    clear_cache.set_sensitive(cached_clips > 0);
+    clear_cache.connect_clicked(glib::clone!(
+        #[weak]
+        reader,
+        #[weak]
+        cache_label,
+        #[weak]
+        clear_cache,
+        move |_| {
+            reader.speech.clear_azure_cache();
+            cache_label.set_label("Cached TTS clips: 0");
+            clear_cache.set_sensitive(false);
+        }
+    ));
+    cache_row.append(&cache_label);
+    cache_row.append(&clear_cache);
+    fields.append(&cache_row);
+
     let error = gtk::Label::new(None);
     error.set_wrap(true);
     error.set_xalign(0.0);
@@ -901,7 +1344,11 @@ fn show_azure_settings(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
         #[weak]
         dialog,
         move |_| {
-            if let Err(message) = reader.speech.configure_azure(&region.text(), &key.text()) {
+            if let Err(message) = reader.speech.configure_azure_persistent(
+                &region.text(),
+                &key.text(),
+                remember.is_active(),
+            ) {
                 error.set_label(message);
                 error.set_visible(true);
                 return;
@@ -1313,6 +1760,8 @@ print("ok")
         .speech
         .configure_azure("australiaeast", "test-key")
         .unwrap();
+    assert!(!reader.loading_spinner.is_visible());
+    assert!(!reader.loading_spinner.is_spinning());
     reader.speak();
     assert!(
         reader
@@ -1320,9 +1769,17 @@ print("ok")
             .text()
             .contains("Getting Swedish audio from Azure")
     );
+    assert!(reader.loading_spinner.is_visible());
+    assert!(reader.loading_spinner.is_spinning());
+    assert!(reader.header_spinner.is_visible());
+    assert!(reader.header_spinner.is_spinning());
     assert!(!reader.entry.is_sensitive());
     assert!(reader.skip.is_sensitive());
     assert!(wait_until_paused(&reader));
+    assert!(!reader.loading_spinner.is_visible());
+    assert!(!reader.loading_spinner.is_spinning());
+    assert!(!reader.header_spinner.is_visible());
+    assert!(!reader.header_spinner.is_spinning());
     assert_eq!(
         reader.transcript.tooltip_text().as_deref(),
         Some("Speech voice: sv-SE-MattiasNeural · Azure live")
@@ -1332,6 +1789,7 @@ print("ok")
     // Replay must use the session cache immediately, without launching another worker.
     reader.speech.stop();
     reader.speak();
+    assert!(!reader.loading_spinner.is_spinning());
     assert!(
         reader
             .status
@@ -1462,10 +1920,18 @@ print("ok")
         .unwrap();
     reader.choices[wrong].emit_clicked();
     assert!(reader.next.is_sensitive());
-    assert!(!reader.entry.is_sensitive());
+    assert!(
+        reader.entry.is_sensitive(),
+        "Entry and choice buttons stay unlocked so the user can change their answer directly"
+    );
+    assert!(reader.choices[wrong].has_css_class("selected-choice"));
     assert!(reader.transcript.text().contains("Vännen"));
+    // Clicking Try again restores the full page silently without re-speaking the whole page.
     reader.next.emit_clicked();
     assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-one");
+    assert!(!reader.speaking.get());
+    // Changing answer directly from wrong -> right without clicking Try again:
+    reader.choices[wrong].emit_clicked();
     let right = reader
         .book
         .borrow()
@@ -1481,7 +1947,15 @@ print("ok")
         .clone();
     reader.entry.set_text(&right);
     reader.entry.emit_activate();
+    assert_eq!(reader.next.label().as_deref(), Some("Fortsätt · Continue"));
     reader.next.emit_clicked();
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-two");
+    // Page navigator Back & Forward buttons jump cleanly between pages:
+    assert!(reader.prev_page.is_sensitive());
+    reader.prev_page.emit_clicked();
+    assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-one");
+    assert!(reader.next_page.is_sensitive());
+    reader.next_page.emit_clicked();
     assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-two");
     reader.speak();
     assert!(
@@ -1490,7 +1964,10 @@ print("ok")
             .text()
             .contains("Getting Swedish audio from Azure")
     );
+    assert!(reader.loading_spinner.is_spinning());
     reader.skip.emit_clicked();
+    assert!(!reader.loading_spinner.is_spinning());
+    assert!(!reader.loading_spinner.is_visible());
     assert_eq!(reader.book.borrow().as_ref().unwrap().page().id, "step-hub");
     assert!(reader.entry.is_sensitive());
     reader.speech.disable_azure();
@@ -1580,4 +2057,168 @@ print("ok")
         Some("Börja om · Play again")
     );
     window.close();
+
+    // 4. Verify remembered Azure key auto-enable, persistent TTS disk cache across instances,
+    //    and follow-along auto-scrolling for both transcript and choices.
+    let persist_dir = std::env::temp_dir().join(format!(
+        "swedish-persist-scroll-{}",
+        glib::uuid_string_random()
+    ));
+    let creds_file = persist_dir.join("azure-speech.json");
+    let cache_dir = persist_dir.join("tts-v1");
+    let scroll_story_file = persist_dir.join("long-scroll.xml");
+    fs::create_dir_all(&persist_dir).unwrap();
+    fs::write(
+        &scroll_story_file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<story version="1.0" id="scroll-test">
+  <meta>
+    <title>Lång sida</title>
+    <subtitle>Auto-scroll &amp; cache test</subtitle>
+  </meta>
+  <cast protagonist="you" responder="wife" narrator="narrator">
+    <actor id="narrator" label="Berättaren" role="lead" voices="mattias"/>
+    <actor id="you" label="Du" role="lead" voices="mattias"/>
+    <actor id="wife" label="Frun" role="lead" voices="sofie"/>
+  </cast>
+  <ending title="Slut">
+    <line actor="wife"><sv>Klart!</sv><en>Done!</en></line>
+  </ending>
+  <pages>
+    <page id="long" scene="home">
+      <title><sv>En väldigt lång morgon i köket</sv><lit>A very long morning in kitchen-the</lit><en>A very long morning in the kitchen</en></title>
+      <setup>
+        <line actor="narrator"><sv>Första stycket handlar om kaffebryggaren som puttrar långsamt medan regnet smattrar mot köksfönstret hela morgonen.</sv><lit>First paragraph-the deals about coffee-brewer-the that simmers slowly while rain-the patters against kitchen-window-the whole morning-the.</lit><en>The first paragraph is about the coffee maker burbling slowly while the rain patters against the kitchen window all morning.</en></line>
+        <line actor="wife"><sv>Andra stycket har ännu fler svenska meningar så att texten garanterat blir högre än fönstret på vänster sida.</sv><lit>Second paragraph-the has still more Swedish sentences so that text-the guaranteed becomes higher than window-the on left side.</lit><en>The second paragraph has even more Swedish sentences so the text is guaranteed to be taller than the left-hand pane.</en></line>
+        <line actor="narrator"><sv>Tredje stycket fortsätter genom hallen förbi skohyllan, paraplystället, tvättkorgen och tre tunga matkassar vid dörren.</sv><lit>Third paragraph-the continues through hall-the past shoe-rack-the, umbrella-stand-the, laundry-basket-the and three heavy grocery-bags by door-the.</lit><en>The third paragraph continues through the hallway past the shoe rack, umbrella stand, laundry basket, and three heavy grocery bags by the door.</en></line>
+        <line actor="wife"><sv>Fjärde stycket lägger till ännu mer dialog om nycklar, vantar, halsdukar, mössor och biljetter innan frågan ens kommer.</sv><lit>Fourth paragraph-the adds to still more dialogue about keys, mittens, scarves, hats and tickets before question-the even comes.</lit><en>The fourth paragraph adds still more dialogue about keys, mittens, scarves, hats, and tickets before the question even arrives.</en></line>
+      </setup>
+      <question><sv>Vad vill du göra med hela den här lördagen nu när kaffet äntligen är klart?</sv><lit>What want you do with whole this Saturday-the now when coffee-the finally is ready?</lit><en>What do you want to do with this whole Saturday now that the coffee is finally ready?</en></question>
+      <choices>
+        <choice next="done">
+          <say><sv>Alternativ ett är en lång mening om att gå ut i skogen trots regnet och plocka svamp i korgen.</sv><lit>Option one is a long sentence about to go out in forest-the despite rain-the and pick mushrooms in basket-the.</lit><en>Option one is a long sentence about heading into the woods despite the rain to pick mushrooms in the basket.</en></say>
+          <reply><sv>Bra val!</sv><en>Good choice!</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Alternativ två är en lång mening om att stanna inne vid köksbordet med påtår och kanelbullar.</sv><lit>Option two is a long sentence about to stay inside by kitchen-table-the with refill and cinnamon-buns.</lit><en>Option two is a long sentence about staying inside at the kitchen table with a refill and cinnamon buns.</en></say>
+          <reply><sv>Mysigt men vi behöver frisk luft.</sv><en>Cosy, though we need fresh air.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Alternativ tre är en lång mening om att köra till varuhuset och mäta tre bokhyllor på lagret.</sv><lit>Option three is a long sentence about to drive to department-store-the and measure three bookshelves in warehouse-the.</lit><en>Option three is a long sentence about driving to the store and measuring three bookshelves in the warehouse.</en></say>
+          <reply><sv>Inte utan måttband.</sv><en>Not without a tape measure.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Alternativ fyra är en lång mening om att gå ner i tvättstugan och boka en tid på den blå skärmen.</sv><lit>Option four is a long sentence about to go down in laundry-room-the and book a slot on the blue screen-the.</lit><en>Option four is a long sentence about heading down to the laundry room and booking a slot on the blue screen.</en></say>
+          <reply><sv>Inte i dag!</sv><en>Not today!</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Alternativ fem är en lång mening om att ta tåget in till centrum och dela ett bord på kaféet.</sv><lit>Option five is a long sentence about to take train-the in to centre and share a table at café-the.</lit><en>Option five is a long sentence about taking the train into town and sharing a table at the café.</en></say>
+          <reply><sv>Nästa helg kanske.</sv><en>Maybe next weekend.</en></reply>
+        </choice>
+        <choice>
+          <say><sv>Alternativ sex är en lång mening längst ner i listan så att högerpanelen rullar ner automatiskt.</sv><lit>Option six is a long sentence furthest down in list-the so that right-panel-the scrolls down automatically.</lit><en>Option six is a long sentence at the very bottom of the list so the right-hand panel scrolls down automatically.</en></say>
+          <reply><sv>Där nere var den!</sv><en>Down there it was!</en></reply>
+        </choice>
+      </choices>
+    </page>
+  </pages>
+</story>"#,
+    )
+    .unwrap();
+
+    let speech1 = Rc::new(Speech::for_live_test_with_paths(
+        MOCK_WORKER,
+        creds_file.clone(),
+        cache_dir.clone(),
+    ));
+    speech1
+        .configure_azure_persistent("australiaeast", "test-key", true)
+        .unwrap();
+    assert!(creds_file.is_file());
+    let (win1, rdr1, err1) = build_with_story(app, speech1, Some(&scroll_story_file));
+    assert!(err1.is_none());
+    rdr1.automatic.set_active(false);
+    rdr1.pause_sentences.set_active(false);
+    rdr1.english.set_active(true);
+    win1.present();
+    rdr1.show();
+    let settle = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < settle {
+        context.iteration(false);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(rdr1.text_scroll.vadjustment().value(), 0.0);
+    assert_eq!(rdr1.choice_scroll.vadjustment().value(), 0.0);
+    rdr1.speak();
+    let mut max_text_scroll = 0.0_f64;
+    let mut max_choice_scroll = 0.0_f64;
+    let mut saw_speaking_choice = false;
+    let mut saw_literal_underscore = false;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while rdr1.speaking.get() {
+        assert!(Instant::now() < deadline, "{}", rdr1.status.text());
+        context.iteration(false);
+        max_text_scroll = max_text_scroll.max(rdr1.text_scroll.vadjustment().value());
+        max_choice_scroll = max_choice_scroll.max(rdr1.choice_scroll.vadjustment().value());
+        saw_speaking_choice |= rdr1
+            .choices
+            .iter()
+            .any(|btn| btn.has_css_class("speaking-choice"));
+        saw_literal_underscore |= rdr1.transcript.label().contains("underline=\"single\"");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        saw_literal_underscore,
+        "Follow-along with English hints must underscore the literal English equivalent"
+    );
+    assert!(
+        max_text_scroll > 0.0,
+        "Transcript did not auto-scroll: upper={}, page_size={}",
+        rdr1.text_scroll.vadjustment().upper(),
+        rdr1.text_scroll.vadjustment().page_size()
+    );
+    assert!(
+        max_choice_scroll > 0.0,
+        "Choices did not auto-scroll: upper={}, page_size={}",
+        rdr1.choice_scroll.vadjustment().upper(),
+        rdr1.choice_scroll.vadjustment().page_size()
+    );
+    assert!(saw_speaking_choice);
+    assert!(
+        !rdr1
+            .choices
+            .iter()
+            .any(|btn| btn.has_css_class("speaking-choice"))
+    );
+    assert!(rdr1.speech.azure_cached_clips() >= 12);
+    win1.close();
+
+    // New Speech instance with a worker that fails if invoked: must auto-enable from remembered
+    // credentials AND play immediately from the persistent TTS disk cache without calling Python.
+    const FAIL_IF_CALLED_WORKER: &str = "import sys; sys.exit(1)";
+    let speech2 = Rc::new(Speech::for_live_test_with_paths(
+        FAIL_IF_CALLED_WORKER,
+        creds_file,
+        cache_dir,
+    ));
+    assert!(
+        speech2.azure_enabled() && speech2.azure_remembered(),
+        "Remembered Azure key must default to enabled on startup"
+    );
+    let (win2, rdr2, err2) = build_with_story(app, speech2, Some(&scroll_story_file));
+    assert!(err2.is_none());
+    win2.present();
+    rdr2.show();
+    assert!(
+        !rdr2.loading_spinner.is_spinning(),
+        "Persistent TTS cache hit must start immediately without loading spinner"
+    );
+    assert!(
+        rdr2.status.text().starts_with("Speaking Swedish:"),
+        "Expected immediate playback from persistent TTS cache, got: {}",
+        rdr2.status.text()
+    );
+    rdr2.speech.stop();
+    win2.close();
+    let _ = fs::remove_dir_all(&persist_dir);
 }

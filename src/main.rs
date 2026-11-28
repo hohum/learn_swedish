@@ -328,7 +328,7 @@ fn main() -> glib::ExitCode {
             window.present();
             return;
         }
-        let azure = Rc::new(AzureSpeech::from_env());
+        let azure = Rc::new(AzureSpeech::load_startup());
         let new_speech: Rc<dyn Fn() -> Rc<Speech>> =
             Rc::new(move || Rc::new(Speech::with_azure(azure.clone())));
         let launcher = build_launcher(app, new_speech.clone());

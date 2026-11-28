@@ -57,7 +57,7 @@ impl Timing {
     }
 
     fn load_online(path: &Path, text: &str) -> Result<Self, Box<dyn Error>> {
-        let timing: Self = serde_json::from_slice(&fs::read(path)?)?;
+        let mut timing: Self = serde_json::from_slice(&fs::read(path)?)?;
         let starts = &timing.sentence_starts_us;
         if timing.duration_us <= 0
             || starts.first().is_some_and(|start| *start != 0)
@@ -68,10 +68,85 @@ impl Timing {
         {
             return Err(io::Error::other("Invalid Azure sentence timings").into());
         }
+        if timing.words.is_empty() {
+            timing.populate_estimated_words(text);
+        }
         if !timing.words.is_empty() {
             timing.validate(text)?;
         }
         Ok(timing)
+    }
+
+    fn populate_estimated_words(&mut self, text: &str) {
+        let raw_words: Vec<&str> = text.split_whitespace().collect();
+        let Ok(total_count) = i64::try_from(raw_words.len()) else {
+            return;
+        };
+        if raw_words.is_empty() || self.duration_us < total_count {
+            return;
+        }
+        let sentences = self.sentences();
+        let mut word_groups: Vec<Vec<&str>> = Vec::new();
+        let mut current_group = Vec::new();
+        for (idx, &word) in raw_words.iter().enumerate() {
+            current_group.push(word);
+            if idx + 1 == raw_words.len() || ends_sentence(word) {
+                word_groups.push(std::mem::take(&mut current_group));
+            }
+        }
+        let distribute =
+            |group: &[&str], win_start: i64, win_end: i64, out: &mut Vec<WordTiming>| -> bool {
+                let count = group.len();
+                let Ok(count_i64) = i64::try_from(count) else {
+                    return false;
+                };
+                let avail = win_end - win_start;
+                if avail < count_i64 {
+                    return false;
+                }
+                let weights: Vec<i64> = group
+                    .iter()
+                    .map(|w| i64::try_from(w.chars().count().max(1)).unwrap_or(1))
+                    .collect();
+                let total_weight: i64 = weights.iter().sum::<i64>().max(1);
+                let mut pos = win_start;
+                let mut acc = 0_i64;
+                for (offset, &word) in group.iter().enumerate() {
+                    acc += weights[offset];
+                    let remaining = i64::try_from(count - offset - 1).unwrap_or(0);
+                    let end = if offset + 1 == count {
+                        win_end
+                    } else {
+                        let target = win_start + (avail * acc) / total_weight;
+                        target.max(pos + 1).min(win_end - remaining)
+                    };
+                    out.push(WordTiming {
+                        word: word.to_owned(),
+                        start_us: pos,
+                        end_us: end,
+                    });
+                    pos = end;
+                }
+                true
+            };
+
+        let mut generated = Vec::with_capacity(raw_words.len());
+        let mut matched_sentences = word_groups.len() == sentences.len();
+        if matched_sentences {
+            for (group, sentence) in word_groups.iter().zip(&sentences) {
+                if !distribute(group, sentence.start_us, sentence.end_us, &mut generated) {
+                    matched_sentences = false;
+                    break;
+                }
+            }
+        }
+        if !matched_sentences {
+            generated.clear();
+            if !distribute(&raw_words, 0, self.duration_us, &mut generated) {
+                return;
+            }
+        }
+        self.words = generated;
     }
 
     fn validate(&self, text: &str) -> io::Result<()> {
@@ -101,6 +176,24 @@ impl Timing {
         self.words
             .iter()
             .position(|word| timestamp >= word.start_us && timestamp < word.end_us)
+    }
+
+    fn word_at_continuous(&self, timestamp: i64) -> Option<usize> {
+        if let Some(exact) = self.word_at(timestamp) {
+            return Some(exact);
+        }
+        for (index, word) in self.words.iter().enumerate() {
+            if timestamp >= word.end_us {
+                let next_start = self
+                    .words
+                    .get(index + 1)
+                    .map_or(self.duration_us, |next| next.start_us);
+                if timestamp < next_start && timestamp - word.end_us <= 250_000 {
+                    return Some(index);
+                }
+            }
+        }
+        None
     }
 
     fn sentences(&self) -> Vec<Sentence> {
@@ -148,37 +241,307 @@ impl Timing {
     }
 }
 
+struct PhraseSpan {
+    start: usize,
+    end: usize,
+    words: Vec<(usize, usize)>,
+}
+
+fn transcript_spans(phrases: &[Phrase], show_english: bool) -> Vec<PhraseSpan> {
+    let mut cursor = 0;
+    let mut spans = Vec::with_capacity(phrases.len());
+    for (index, phrase) in phrases.iter().enumerate() {
+        if index > 0 {
+            cursor += 2; // "\n\n"
+        }
+        let start = cursor;
+        if let Some(speaker) = &phrase.speaker {
+            cursor += speaker.len() + " · ".len();
+        }
+        let mut words = Vec::new();
+        for (word_index, word) in phrase.swedish.split_whitespace().enumerate() {
+            if word_index > 0 {
+                cursor += 1; // " "
+            }
+            let word_start = cursor;
+            cursor += word.len();
+            words.push((word_start, cursor));
+        }
+        if show_english {
+            if let Some(literal) = &phrase.literal {
+                cursor += 1 + literal.len();
+            }
+            if !phrase.english.is_empty() {
+                cursor += 1 + phrase.english.len();
+            }
+        }
+        spans.push(PhraseSpan {
+            start,
+            end: cursor,
+            words,
+        });
+    }
+    spans
+}
+
+fn clean_word_token(word: &str) -> String {
+    word.trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase()
+}
+
+fn is_two_word_swedish_idiom(first: &str, second: &str) -> bool {
+    let a = clean_word_token(first);
+    let b = clean_word_token(second);
+    matches!(
+        (a.as_str(), b.as_str()),
+        ("i", "dag")
+            | ("i", "går")
+            | ("i", "morgon")
+            | ("i", "kväll")
+            | ("i", "natt")
+            | ("i", "stället")
+            | ("in", "i")
+            | ("ut", "ur")
+            | ("ett", "annat")
+            | ("en", "annan")
+            | ("någon", "gång")
+            | ("nån", "gång")
+            | ("var", "sin")
+            | ("var", "sitt")
+            | ("allt", "ihop")
+            | ("över", "allt")
+            | ("till", "exempel")
+            | ("fram", "för")
+    )
+}
+
+fn is_two_word_english_gloss(sv_word: &str, lit_first: &str, lit_second: &str) -> bool {
+    let sv = clean_word_token(sv_word);
+    let l1 = clean_word_token(lit_first);
+    let l2 = clean_word_token(lit_second);
+    if l1 == "to" && sv != "att" && sv != "till" && !l2.is_empty() {
+        return true;
+    }
+    matches!(
+        (sv.as_str(), l1.as_str(), l2.as_str()),
+        ("ledigt", "time", "off") | ("ledig", "time", "off") | ("slut", "run", "out")
+    )
+}
+
+type ClausePair = ((usize, usize), (usize, usize));
+
+fn split_matching_clauses<'a>(
+    sv_words: &[&'a str],
+    lit_words: &[&'a str],
+    pred: impl Fn(&str) -> bool,
+) -> Option<Vec<ClausePair>> {
+    let sv_breaks: Vec<usize> = sv_words
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| (i + 1 == sv_words.len() || pred(w)).then_some(i + 1))
+        .collect();
+    let lit_breaks: Vec<usize> = lit_words
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| (i + 1 == lit_words.len() || pred(w)).then_some(i + 1))
+        .collect();
+    if sv_breaks.len() != lit_breaks.len() || sv_breaks.len() <= 1 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(sv_breaks.len());
+    let mut s_prev = 0;
+    let mut l_prev = 0;
+    for (s_end, l_end) in sv_breaks.into_iter().zip(lit_breaks) {
+        out.push(((s_prev, s_end), (l_prev, l_end)));
+        s_prev = s_end;
+        l_prev = l_end;
+    }
+    Some(out)
+}
+
+pub fn literal_word_span(
+    swedish: &str,
+    literal: &str,
+    swedish_word_index: usize,
+) -> Option<(usize, usize)> {
+    let sv_all: Vec<&str> = swedish.split_whitespace().collect();
+    let lit_all: Vec<&str> = literal.split_whitespace().collect();
+    if swedish_word_index >= sv_all.len() || lit_all.is_empty() {
+        return None;
+    }
+    if sv_all.len() == lit_all.len() {
+        return Some((swedish_word_index, swedish_word_index + 1));
+    }
+    let sentence_pairs = split_matching_clauses(&sv_all, &lit_all, ends_sentence)
+        .unwrap_or_else(|| vec![((0, sv_all.len()), (0, lit_all.len()))]);
+    let ((s_sent_lo, s_sent_hi), (l_sent_lo, l_sent_hi)) = sentence_pairs
+        .into_iter()
+        .find(|((s_lo, s_hi), _)| (*s_lo..*s_hi).contains(&swedish_word_index))?;
+
+    let clause_pred = |w: &str| {
+        w.trim_end_matches(['"', '\'', ')', ']', '»', '”', '’'])
+            .ends_with([',', ';', ':', '—', '–'])
+    };
+    let sv_sent = &sv_all[s_sent_lo..s_sent_hi];
+    let lit_sent = &lit_all[l_sent_lo..l_sent_hi];
+    let local_sent_idx = swedish_word_index - s_sent_lo;
+    let ((c_sv_lo, c_sv_hi), (c_lit_lo, c_lit_hi)) =
+        if let Some(clauses) = split_matching_clauses(sv_sent, lit_sent, clause_pred) {
+            clauses
+                .into_iter()
+                .find(|((lo, hi), _)| (*lo..*hi).contains(&local_sent_idx))?
+        } else {
+            ((0, sv_sent.len()), (0, lit_sent.len()))
+        };
+
+    let sv_clause = &sv_sent[c_sv_lo..c_sv_hi];
+    let lit_clause = &lit_sent[c_lit_lo..c_lit_hi];
+    let target = local_sent_idx - c_sv_lo;
+    let lit_base = l_sent_lo + c_lit_lo;
+    let s_len = sv_clause.len();
+    let l_len = lit_clause.len();
+    if s_len == l_len {
+        return Some((lit_base + target, lit_base + target + 1));
+    }
+
+    let mut mapping = vec![(0, 1); s_len];
+    let mut s = 0;
+    let mut l = 0;
+    while s < s_len && l < l_len {
+        let rem_s = s_len - s;
+        let rem_l = l_len - l;
+        if rem_s == 1 {
+            mapping[s] = (l, l_len);
+            break;
+        }
+        if rem_l == 1 {
+            for item in &mut mapping[s..s_len] {
+                *item = (l, l + 1);
+            }
+            break;
+        }
+        if rem_s == rem_l {
+            for offset in 0..rem_s {
+                mapping[s + offset] = (l + offset, l + offset + 1);
+            }
+            break;
+        }
+        if rem_s > rem_l && is_two_word_swedish_idiom(sv_clause[s], sv_clause[s + 1]) {
+            mapping[s] = (l, l + 1);
+            mapping[s + 1] = (l, l + 1);
+            s += 2;
+            l += 1;
+            continue;
+        }
+        if rem_l > rem_s
+            && is_two_word_english_gloss(sv_clause[s], lit_clause[l], lit_clause[l + 1])
+        {
+            mapping[s] = (l, l + 2);
+            s += 1;
+            l += 2;
+            continue;
+        }
+        let later_idiom = (rem_s > rem_l
+            && (s + 1..s_len - 1)
+                .any(|k| is_two_word_swedish_idiom(sv_clause[k], sv_clause[k + 1])))
+            || (rem_l > rem_s
+                && (s + 1..s_len).any(|k| {
+                    let est_l = l + (k - s);
+                    est_l + 1 < l_len
+                        && is_two_word_english_gloss(
+                            sv_clause[k],
+                            lit_clause[est_l],
+                            lit_clause[est_l + 1],
+                        )
+                }));
+        if later_idiom {
+            mapping[s] = (l, l + 1);
+            s += 1;
+            l += 1;
+        } else {
+            for idx in 0..rem_s {
+                let start = l + (idx * rem_l) / rem_s;
+                let end = (l + ((idx + 1) * rem_l).div_ceil(rem_s))
+                    .max(start + 1)
+                    .min(l_len);
+                mapping[s + idx] = (start.min(l_len - 1), end);
+            }
+            break;
+        }
+    }
+    let (lo, hi) = mapping[target];
+    Some((lit_base + lo, lit_base + hi))
+}
+
 pub fn transcript_markup(
     phrases: &[Phrase],
     active: Option<(usize, usize)>,
     show_english: bool,
 ) -> String {
-    phrases.iter().enumerate().map(|(phrase_index, phrase)| {
-        let swedish = phrase.swedish.split_whitespace().enumerate().map(|(word_index, word)| {
-            let escaped = glib::markup_escape_text(word);
-            if active == Some((phrase_index, word_index)) {
-                format!("<span background=\"#f6d32d\" foreground=\"#1c1c1c\" weight=\"bold\">{escaped}</span>")
+    phrases
+        .iter()
+        .enumerate()
+        .map(|(phrase_index, phrase)| {
+            let swedish = phrase
+                .swedish
+                .split_whitespace()
+                .enumerate()
+                .map(|(word_index, word)| {
+                    let escaped = glib::markup_escape_text(word);
+                    if active == Some((phrase_index, word_index)) {
+                        format!(
+                            "<span background=\"#f6d32d\" foreground=\"#1c1c1c\" weight=\"bold\">{escaped}</span>"
+                        )
+                    } else {
+                        escaped.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let spoken = if let Some(speaker) = &phrase.speaker {
+                format!(
+                    "<span size=\"small\" weight=\"bold\">{}</span> · {swedish}",
+                    glib::markup_escape_text(speaker)
+                )
             } else {
-                escaped.to_string()
+                swedish
+            };
+            let mut text = spoken;
+            if show_english {
+                use std::fmt::Write;
+                if let Some(literal) = &phrase.literal {
+                    let lit_active = active
+                        .filter(|(p_idx, _)| *p_idx == phrase_index)
+                        .and_then(|(_, w_idx)| literal_word_span(&phrase.swedish, literal, w_idx));
+                    let lit_markup = literal
+                        .split_whitespace()
+                        .enumerate()
+                        .map(|(lit_idx, word)| {
+                            let escaped = glib::markup_escape_text(word);
+                            if lit_active.is_some_and(|(lo, hi)| (lo..hi).contains(&lit_idx)) {
+                                format!("<span underline=\"single\" weight=\"bold\">{escaped}</span>")
+                            } else {
+                                escaped.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    write!(text, "\n<span size=\"small\" style=\"italic\">{lit_markup}</span>")
+                        .unwrap();
+                }
+                if !phrase.english.is_empty() {
+                    write!(
+                        text,
+                        "\n<span size=\"small\">{}</span>",
+                        glib::markup_escape_text(&phrase.english)
+                    )
+                    .unwrap();
+                }
             }
-        }).collect::<Vec<_>>().join(" ");
-        let spoken = if let Some(speaker) = &phrase.speaker {
-            format!("<span size=\"small\" weight=\"bold\">{}</span> · {swedish}", glib::markup_escape_text(speaker))
-        } else {
-            swedish
-        };
-        let mut text = spoken;
-        if show_english {
-            use std::fmt::Write;
-            if let Some(literal) = &phrase.literal {
-                write!(text, "\n<span size=\"small\" style=\"italic\">{}</span>", glib::markup_escape_text(literal)).unwrap();
-            }
-            if !phrase.english.is_empty() {
-                write!(text, "\n<span size=\"small\">{}</span>", glib::markup_escape_text(&phrase.english)).unwrap();
-            }
-        }
-        text
-    }).collect::<Vec<_>>().join("\n\n")
+            text
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[derive(Clone)]
@@ -217,6 +580,7 @@ struct Playback {
     media: gst::Pipeline,
     loading_since: Instant,
     highlighted: Option<(usize, usize)>,
+    approx_scroll_word: Option<(usize, usize)>,
     status: gtk::Label,
     transcript: gtk::Label,
     completion: Completion,
@@ -237,6 +601,8 @@ struct Transcript {
     active: Option<(usize, usize)>,
 }
 
+type PhraseListener = Box<dyn Fn(Option<usize>)>;
+
 pub struct Speech {
     playback: RefCell<Option<Playback>>,
     pending: RefCell<Option<PendingSpeech>>,
@@ -246,6 +612,8 @@ pub struct Speech {
     auto_pause: Cell<bool>,
     transcript: RefCell<Option<Transcript>>,
     last_sentence: RefCell<Option<LastSentence>>,
+    spinners: RefCell<Vec<gtk::Spinner>>,
+    on_phrase: RefCell<Option<PhraseListener>>,
     azure: Rc<AzureSpeech>,
     cast: RefCell<azure::Cast>,
     #[cfg(test)]
@@ -299,6 +667,8 @@ impl Speech {
             auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
             last_sentence: RefCell::new(None),
+            spinners: RefCell::new(Vec::new()),
+            on_phrase: RefCell::new(None),
             azure,
             cast: RefCell::default(),
             #[cfg(test)]
@@ -545,20 +915,86 @@ fn validate_audio(staging: &Path, phrases: &[Phrase]) -> Result<(), Box<dyn Erro
 }
 
 impl Speech {
+    pub fn register_spinner(&self, spinner: &gtk::Spinner) {
+        let loading = self.is_loading();
+        spinner.set_visible(loading);
+        if loading {
+            spinner.start();
+        } else {
+            spinner.stop();
+        }
+        self.spinners.borrow_mut().push(spinner.clone());
+    }
+
+    pub fn set_phrase_listener(&self, listener: impl Fn(Option<usize>) + 'static) {
+        self.on_phrase.replace(Some(Box::new(listener)));
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.pending.borrow().is_some()
+    }
+
+    fn set_loading(&self, loading: bool) {
+        for spinner in self.spinners.borrow().iter() {
+            spinner.set_visible(loading);
+            if loading {
+                spinner.start();
+            } else {
+                spinner.stop();
+            }
+        }
+    }
+
+    fn notify_phrase(&self, phrase_index: Option<usize>) {
+        if let Some(listener) = self.on_phrase.borrow().as_ref() {
+            listener(phrase_index);
+        }
+    }
+
     pub fn azure_enabled(&self) -> bool {
         self.azure.enabled()
+    }
+
+    pub fn azure_remembered(&self) -> bool {
+        self.azure.remembered()
+    }
+
+    pub fn azure_has_key(&self) -> bool {
+        self.azure.has_available_key()
     }
 
     pub fn azure_region(&self) -> String {
         self.azure.region()
     }
 
+    #[cfg(test)]
     pub fn configure_azure(&self, region: &str, key: &str) -> Result<(), &'static str> {
         self.azure.configure(region, key)
     }
 
+    pub fn configure_azure_persistent(
+        &self,
+        region: &str,
+        key: &str,
+        remember: bool,
+    ) -> Result<(), &'static str> {
+        self.azure.configure_persistent(region, key, remember)
+    }
+
     pub fn disable_azure(&self) {
         self.azure.disable();
+    }
+
+    pub fn forget_azure(&self) {
+        self.azure.forget();
+    }
+
+    pub fn azure_cached_clips(&self) -> usize {
+        self.azure.cached_clip_count()
+    }
+
+    pub fn clear_azure_cache(&self) {
+        self.azure.clear_cache();
     }
 
     pub fn set_cast(&self, actors: &[learn_swedish::adventure::ActorSpec]) {
@@ -571,12 +1007,34 @@ impl Speech {
 
     pub fn set_show_english(&self, show: bool) {
         self.show_english.set(show);
+        let active_clip_phrase = self
+            .playback
+            .borrow()
+            .as_ref()
+            .map(|pb| pb.clips[pb.current].phrase_index);
         if let Some(transcript) = self.transcript.borrow().as_ref() {
             transcript.label.set_markup(&transcript_markup(
                 &transcript.phrases,
                 transcript.active,
                 show,
             ));
+            if let Some((phrase_index, word_index)) = transcript.active {
+                Self::scroll_transcript_to(
+                    &transcript.phrases,
+                    &transcript.label,
+                    show,
+                    phrase_index,
+                    Some(word_index),
+                );
+            } else if let Some(phrase_index) = active_clip_phrase {
+                Self::scroll_transcript_to(
+                    &transcript.phrases,
+                    &transcript.label,
+                    show,
+                    phrase_index,
+                    None,
+                );
+            }
         }
     }
 
@@ -590,74 +1048,108 @@ impl Speech {
         label: &gtk::Label,
         active: Option<(usize, usize)>,
     ) {
-        label.set_markup(&transcript_markup(phrases, active, self.show_english.get()));
+        let show_english = self.show_english.get();
+        label.set_markup(&transcript_markup(phrases, active, show_english));
         self.transcript.replace(Some(Transcript {
             phrases: phrases.to_vec(),
             label: label.clone(),
             active,
         }));
-        if label.widget_name() == "adventure-transcript"
-            && let Some((phrase_index, word_index)) = active
-        {
-            let plain = |phrase: &Phrase| {
-                let mut text = String::new();
-                if let Some(speaker) = &phrase.speaker {
-                    text.push_str(speaker);
-                    text.push_str(" · ");
-                }
-                text.push_str(
-                    &phrase
-                        .swedish
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                );
-                if self.show_english.get() {
-                    if let Some(literal) = &phrase.literal {
-                        text.push('\n');
-                        text.push_str(literal);
-                    }
-                    if !phrase.english.is_empty() {
-                        text.push('\n');
-                        text.push_str(&phrase.english);
-                    }
-                }
-                text
-            };
-            let before: usize = phrases[..phrase_index]
-                .iter()
-                .map(|p| plain(p).len() + 2)
-                .sum();
-            let speaker = phrases[phrase_index]
-                .speaker
-                .as_ref()
-                .map_or(0, |name| name.len() + " · ".len());
-            let words: usize = phrases[phrase_index]
-                .swedish
-                .split_whitespace()
-                .take(word_index)
-                .map(|word| word.len() + 1)
-                .sum();
-            let offset = i32::try_from(before + speaker + words)
-                .expect("A story page fits Pango's text index");
-            let rect = label.layout().index_to_pos(offset);
-            if let Some(scroll) = label
-                .ancestor(gtk::ScrolledWindow::static_type())
-                .and_then(|widget| widget.downcast::<gtk::ScrolledWindow>().ok())
-            {
-                let adjustment = scroll.vadjustment();
-                let y = f64::from(rect.y()) / f64::from(gtk::pango::SCALE);
-                let height = f64::from(rect.height()) / f64::from(gtk::pango::SCALE);
-                if y < adjustment.value()
-                    || y + height > adjustment.value() + adjustment.page_size()
-                {
-                    adjustment.set_value(
-                        (y - 12.0)
-                            .clamp(0.0, (adjustment.upper() - adjustment.page_size()).max(0.0)),
-                    );
-                }
-            }
+        if let Some((phrase_index, word_index)) = active {
+            Self::scroll_transcript_to(
+                phrases,
+                label,
+                show_english,
+                phrase_index,
+                Some(word_index),
+            );
         }
+    }
+
+    fn scroll_transcript_to(
+        phrases: &[Phrase],
+        label: &gtk::Label,
+        show_english: bool,
+        phrase_index: usize,
+        word_index: Option<usize>,
+    ) {
+        if label.widget_name() != "adventure-transcript" || phrase_index >= phrases.len() {
+            return;
+        }
+        let spans = transcript_spans(phrases, show_english);
+        let span = &spans[phrase_index];
+        let (focus_start, focus_end) = match word_index.and_then(|w| span.words.get(w).copied()) {
+            Some(word_span) => word_span,
+            None => span
+                .words
+                .first()
+                .map_or((span.start, span.end), |first| (span.start, first.1)),
+        };
+        let phrase_end = span.end;
+        if !Self::apply_transcript_scroll(label, focus_start, focus_end, phrase_end) {
+            let weak_label = label.downgrade();
+            glib::idle_add_local_once(move || {
+                if let Some(label) = weak_label.upgrade() {
+                    let _ =
+                        Self::apply_transcript_scroll(&label, focus_start, focus_end, phrase_end);
+                }
+            });
+        }
+    }
+
+    fn apply_transcript_scroll(
+        label: &gtk::Label,
+        focus_start: usize,
+        focus_end: usize,
+        phrase_end: usize,
+    ) -> bool {
+        let Some(scroll) = label
+            .ancestor(gtk::ScrolledWindow::static_type())
+            .and_then(|widget| widget.downcast::<gtk::ScrolledWindow>().ok())
+        else {
+            return true;
+        };
+        let adjustment = scroll.vadjustment();
+        let page_size = adjustment.page_size();
+        let upper = adjustment.upper();
+        let layout = label.layout();
+        let text_len = layout.text().len();
+        if text_len == 0 {
+            return true;
+        }
+        let f_start = i32::try_from(focus_start.min(text_len)).unwrap_or(i32::MAX);
+        let f_end = i32::try_from(focus_end.min(text_len)).unwrap_or(i32::MAX);
+        let p_end = i32::try_from(phrase_end.min(text_len)).unwrap_or(i32::MAX);
+        let start_rect = layout.index_to_pos(f_start);
+        let end_rect = layout.index_to_pos(f_end);
+        let phrase_rect = layout.index_to_pos(p_end);
+        let top_margin = f64::from(label.margin_top());
+        let scale = f64::from(gtk::pango::SCALE);
+        let word_top = top_margin + f64::from(start_rect.y()) / scale;
+        let word_bottom = top_margin + f64::from(end_rect.y() + end_rect.height()) / scale;
+        let phrase_bottom = top_margin + f64::from(phrase_rect.y() + phrase_rect.height()) / scale;
+
+        if page_size <= 1.0 || upper + 2.0 < phrase_bottom {
+            return false;
+        }
+        if upper <= page_size + 1.0 {
+            if adjustment.value() > 0.0 {
+                adjustment.set_value(0.0);
+            }
+            return true;
+        }
+        let top_pad = (page_size * 0.15).clamp(14.0, 44.0);
+        let bottom_pad = (page_size * 0.28).clamp(32.0, 88.0);
+        let visible_phrase_bottom = phrase_bottom.min(word_top + page_size - top_pad - 12.0);
+        let desired_bottom = visible_phrase_bottom.max(word_bottom + bottom_pad);
+        let current = adjustment.value();
+        let max_scroll = (upper - page_size).max(0.0);
+        if word_top < current + top_pad {
+            adjustment.set_value((word_top - top_pad).clamp(0.0, max_scroll));
+        } else if desired_bottom > current + page_size {
+            adjustment.set_value((desired_bottom - page_size + 12.0).clamp(0.0, max_scroll));
+        }
+        true
     }
 
     pub fn set_auto_pause(self: &Rc<Self>, enabled: bool) {
@@ -711,6 +1203,7 @@ impl Speech {
 
     pub fn stop(&self) {
         let pending = self.pending.borrow_mut().take();
+        self.set_loading(false);
         if let Some(pending) = pending {
             pending.poll.remove();
             drop(pending.request);
@@ -725,9 +1218,12 @@ impl Speech {
                 Self::report_error(&playback.status, &format!("Could not stop audio: {error}"));
             }
             self.show_transcript(&playback.phrases, &playback.transcript);
+            self.notify_phrase(None);
             if let Some(completion) = playback.completion.take() {
                 completion(false);
             }
+        } else {
+            self.notify_phrase(None);
         }
     }
 
@@ -740,6 +1236,7 @@ impl Speech {
         let _ = playback.media.set_state(gst::State::Null);
         Self::report_error(&playback.status, message);
         self.show_transcript(&playback.phrases, &playback.transcript);
+        self.notify_phrase(None);
         if let Some(completion) = playback.completion.take() {
             completion(false);
         }
@@ -852,6 +1349,12 @@ impl Speech {
                 playback.sentence += 1;
                 let clip = &playback.clips[playback.current];
                 let sentence = clip.sentences[playback.sentence];
+                let first_word = clip
+                    .timing
+                    .words
+                    .iter()
+                    .position(|w| w.start_us >= sentence.start_us);
+                let phrase_index = clip.phrase_index;
                 let awaiting = (playback.sentence + 1 < clip.sentences.len())
                     .then(|| (sentence.end_us, Instant::now()));
                 if let Err(error) = self.seek_and_play(playback, sentence.start_us) {
@@ -862,11 +1365,22 @@ impl Speech {
                 playback.awaiting_seek_below = awaiting;
                 playback.loading_since = Instant::now();
                 playback.highlighted = None;
+                playback.approx_scroll_word = None;
                 playback.status.set_label(&format!(
                     "Speaking Swedish: {}",
                     playback.clips[playback.current].phrase.swedish
                 ));
+                let phrases = playback.phrases.clone();
+                let transcript = playback.transcript.clone();
                 drop(state);
+                Self::scroll_transcript_to(
+                    &phrases,
+                    &transcript,
+                    self.show_english.get(),
+                    phrase_index,
+                    first_word,
+                );
+                self.notify_phrase(Some(phrase_index));
                 self.start_timer();
                 true
             }
@@ -874,6 +1388,7 @@ impl Speech {
                 playback.current += 1;
                 playback.sentence = 0;
                 let clip = &playback.clips[playback.current];
+                let phrase_index = clip.phrase_index;
                 Self::voice_tooltip(&playback.transcript, clip);
                 let next = playback
                     .media
@@ -892,11 +1407,22 @@ impl Speech {
                 playback.awaiting_seek_below = None;
                 playback.loading_since = Instant::now();
                 playback.highlighted = None;
+                playback.approx_scroll_word = None;
                 self.show_transcript(&playback.phrases, &playback.transcript);
                 playback
                     .status
                     .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+                let phrases = playback.phrases.clone();
+                let transcript = playback.transcript.clone();
                 drop(state);
+                Self::scroll_transcript_to(
+                    &phrases,
+                    &transcript,
+                    self.show_english.get(),
+                    phrase_index,
+                    None,
+                );
+                self.notify_phrase(Some(phrase_index));
                 self.start_timer();
                 true
             }
@@ -910,6 +1436,12 @@ impl Speech {
         };
         let clip = &playback.clips[playback.current];
         let sentence = clip.sentences[playback.sentence];
+        let first_word = clip
+            .timing
+            .words
+            .iter()
+            .position(|w| w.start_us >= sentence.start_us);
+        let phrase_index = clip.phrase_index;
         let awaiting = (playback.sentence + 1 < clip.sentences.len())
             .then(|| (sentence.end_us, Instant::now()));
         let result = if playback.pause_state == PauseState::AtClipEnd {
@@ -932,11 +1464,22 @@ impl Speech {
         playback.awaiting_seek_below = awaiting;
         playback.loading_since = Instant::now();
         playback.highlighted = None;
+        playback.approx_scroll_word = None;
         self.show_transcript(&playback.phrases, &playback.transcript);
         playback
             .status
             .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+        let phrases = playback.phrases.clone();
+        let transcript = playback.transcript.clone();
         drop(state);
+        Self::scroll_transcript_to(
+            &phrases,
+            &transcript,
+            self.show_english.get(),
+            phrase_index,
+            first_word,
+        );
+        self.notify_phrase(Some(phrase_index));
         self.start_timer();
         true
     }
@@ -955,6 +1498,12 @@ impl Speech {
         };
         let (phrases, clip, sentence_index, status, transcript) = last;
         let sentence = clip.sentences[sentence_index];
+        let first_word = clip
+            .timing
+            .words
+            .iter()
+            .position(|w| w.start_us >= sentence.start_us);
+        let phrase_index = clip.phrase_index;
         self.stop();
         self.show_transcript(&phrases, &transcript);
         let media = match self.media_at(&clip.audio, sentence.start_us) {
@@ -967,6 +1516,13 @@ impl Speech {
         };
         Self::voice_tooltip(&transcript, &clip);
         status.set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+        Self::scroll_transcript_to(
+            &phrases,
+            &transcript,
+            self.show_english.get(),
+            phrase_index,
+            first_word,
+        );
         self.playback.replace(Some(Playback {
             clips: vec![clip],
             phrases,
@@ -977,11 +1533,13 @@ impl Speech {
             media,
             loading_since: Instant::now(),
             highlighted: None,
+            approx_scroll_word: None,
             status,
             transcript,
             completion: Some(Box::new(completion)),
             reminder: false,
         }));
+        self.notify_phrase(Some(phrase_index));
         self.start_timer();
         true
     }
@@ -1132,6 +1690,7 @@ impl Speech {
             };
             let pending = state.take().expect("Polling an active Azure request");
             drop(state);
+            speech.set_loading(false);
             let phrases = phrases.take().expect("The request completes only once");
             let result = match result {
                 Ok(()) => speech.azure.save(pending.request).and_then(|()| {
@@ -1168,6 +1727,7 @@ impl Speech {
             poll,
             completion,
         }));
+        self.set_loading(true);
     }
 
     fn play_online(
@@ -1278,6 +1838,14 @@ impl Speech {
         };
         Self::voice_tooltip(transcript, &clips[0]);
         status.set_label(&format!("Speaking Swedish: {}", clips[0].phrase.swedish));
+        let first_phrase_index = clips[0].phrase_index;
+        Self::scroll_transcript_to(
+            &phrases,
+            transcript,
+            self.show_english.get(),
+            first_phrase_index,
+            None,
+        );
         self.playback.replace(Some(Playback {
             clips,
             phrases,
@@ -1288,11 +1856,13 @@ impl Speech {
             media,
             loading_since: Instant::now(),
             highlighted: None,
+            approx_scroll_word: None,
             status: status.clone(),
             transcript: transcript.clone(),
             completion,
             reminder: false,
         }));
+        self.notify_phrase(Some(first_phrase_index));
         self.start_timer();
     }
 
@@ -1356,6 +1926,7 @@ impl Speech {
                     playback.current += 1;
                     playback.sentence = 0;
                     let clip = &playback.clips[playback.current];
+                    let phrase_index = clip.phrase_index;
                     Self::voice_tooltip(&playback.transcript, clip);
                     let next = playback
                         .media
@@ -1371,6 +1942,7 @@ impl Speech {
                             state.take();
                             drop(state);
                             self.timer.borrow_mut().take();
+                            self.notify_phrase(None);
                             if let Some(completion) = completion {
                                 completion(false);
                             }
@@ -1380,10 +1952,22 @@ impl Speech {
                     playback.awaiting_seek_below = None;
                     playback.loading_since = Instant::now();
                     playback.highlighted = None;
+                    playback.approx_scroll_word = None;
                     self.show_transcript(&playback.phrases, &playback.transcript);
                     playback
                         .status
                         .set_label(&format!("Speaking Swedish: {}", clip.phrase.swedish));
+                    let phrases = playback.phrases.clone();
+                    let transcript = playback.transcript.clone();
+                    drop(state);
+                    Self::scroll_transcript_to(
+                        &phrases,
+                        &transcript,
+                        self.show_english.get(),
+                        phrase_index,
+                        None,
+                    );
+                    self.notify_phrase(Some(phrase_index));
                     return glib::ControlFlow::Continue;
                 }
             } else {
@@ -1441,6 +2025,10 @@ impl Speech {
                 }
                 let highlighted = if ignore_boundary {
                     None
+                } else if clip.live_voice.is_some() {
+                    clip.timing
+                        .word_at_continuous(pos_us)
+                        .map(|word| (clip.phrase_index, word))
                 } else {
                     clip.timing
                         .word_at(pos_us)
@@ -1449,6 +2037,29 @@ impl Speech {
                 if playback.highlighted != highlighted {
                     self.render_transcript(&playback.phrases, &playback.transcript, highlighted);
                     playback.highlighted = highlighted;
+                } else if !ignore_boundary
+                    && clip.timing.words.is_empty()
+                    && clip.timing.duration_us > 0
+                {
+                    let word_count = clip.phrase.swedish.split_whitespace().count();
+                    if word_count > 0 {
+                        let clamped = pos_us.clamp(0, clip.timing.duration_us) as u64;
+                        let total = clip.timing.duration_us as u64;
+                        let approx = usize::try_from((clamped * word_count as u64) / total)
+                            .unwrap_or(0)
+                            .min(word_count - 1);
+                        let target = Some((clip.phrase_index, approx));
+                        if playback.approx_scroll_word != target {
+                            playback.approx_scroll_word = target;
+                            Self::scroll_transcript_to(
+                                &playback.phrases,
+                                &playback.transcript,
+                                self.show_english.get(),
+                                clip.phrase_index,
+                                Some(approx),
+                            );
+                        }
+                    }
                 }
             }
             return glib::ControlFlow::Continue;
@@ -1462,6 +2073,7 @@ impl Speech {
         state.take();
         drop(state);
         self.timer.borrow_mut().take();
+        self.notify_phrase(None);
         if let Some(completion) = completion {
             completion(completed);
         }
@@ -1510,6 +2122,24 @@ impl Speech {
     }
 
     #[cfg(test)]
+    pub fn for_live_test_with_paths(
+        worker: &'static str,
+        storage_path: PathBuf,
+        cache_dir: PathBuf,
+    ) -> Self {
+        let mut speech = Self::for_test(
+            vec![glib::tmp_dir().join(glib::uuid_string_random().as_str())],
+            true,
+        );
+        speech.azure = Rc::new(AzureSpeech::with_worker_and_paths(
+            worker,
+            storage_path,
+            cache_dir,
+        ));
+        speech
+    }
+
+    #[cfg(test)]
     pub fn for_test(audio_dirs: Vec<PathBuf>, muted: bool) -> Self {
         assert!(!audio_dirs.is_empty());
         Self {
@@ -1521,6 +2151,8 @@ impl Speech {
             auto_pause: Cell::new(true),
             transcript: RefCell::new(None),
             last_sentence: RefCell::new(None),
+            spinners: RefCell::new(Vec::new()),
+            on_phrase: RefCell::new(None),
             azure: Rc::new(AzureSpeech::default()),
             cast: RefCell::default(),
             muted,
@@ -1716,6 +2348,44 @@ mod tests {
         assert!(!swedish_only.contains("Less"));
         assert!(!swedish_only.contains("Literal"));
         assert!(swedish_only.contains("weight=\"bold\">Bra</span> jobbat!"));
+    }
+
+    #[test]
+    fn literal_english_equivalent_underscores_matching_words_and_idioms() {
+        assert_eq!(
+            literal_word_span("Du väljer utflykt i dag.", "You choose outing today.", 3),
+            Some((3, 4))
+        );
+        assert_eq!(
+            literal_word_span("Du väljer utflykt i dag.", "You choose outing today.", 4),
+            Some((3, 4))
+        );
+        assert_eq!(
+            literal_word_span(
+                "Åtta grader. Värmen verkar ha tagit ledigt.",
+                "Eight degrees. Warmth-the seems to have taken time off.",
+                4
+            ),
+            Some((4, 6))
+        );
+        assert_eq!(
+            literal_word_span(
+                "Åtta grader. Värmen verkar ha tagit ledigt.",
+                "Eight degrees. Warmth-the seems to have taken time off.",
+                6
+            ),
+            Some((7, 9))
+        );
+        let phrase = Phrase {
+            swedish: "Första kapitlet".into(),
+            literal: Some("First chapter-the".into()),
+            english: "Chapter One".into(),
+            voice: None,
+            speaker: None,
+        };
+        let markup = transcript_markup(std::slice::from_ref(&phrase), Some((0, 1)), true);
+        assert!(markup.contains("weight=\"bold\">kapitlet</span>"));
+        assert!(markup.contains("<span underline=\"single\" weight=\"bold\">chapter-the</span>"));
     }
 
     #[test]

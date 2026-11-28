@@ -56,6 +56,57 @@ class LiveAzureSpeechTests(unittest.TestCase):
             with wave.open(str(destination / "1.wav"), "rb") as clip:
                 self.assertEqual(clip.getnframes(), 12_000)
 
+    def test_standalone_punctuation_keeps_measured_word_timings(self):
+        audio = io.BytesIO()
+        with wave.open(audio, "wb") as wav:
+            wav.setparams((1, 2, 24_000, 0, "NONE", "not compressed"))
+            wav.writeframes(bytes(24_000 * 2))
+        lines = [{"text": "LÅG TEMP — TORKAR"}]
+        markers = [["a"]]
+        bookmarks = {"a": 0}
+        boundaries = [
+            Boundary("LÅG", 10_000, 220_000),
+            Boundary("TEMP", 240_000, 480_000),
+            Boundary("TORKAR", 560_000, 900_000),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp)
+            write_clips(destination, lines, markers, audio.getvalue(), bookmarks, boundaries)
+            clip = json.loads((destination / "0.json").read_text(encoding="utf-8"))
+            self.assertEqual([w["word"] for w in clip["words"]], ["LÅG", "TEMP", "—", "TORKAR"])
+            self.assertEqual(clip["words"][0], {"word": "LÅG", "start_us": 10_000, "end_us": 220_000})
+            self.assertEqual(clip["words"][2], {"word": "—", "start_us": 480_000, "end_us": 480_001})
+            self.assertEqual(clip["words"][3], {"word": "TORKAR", "start_us": 560_000, "end_us": 900_000})
+
+    def test_numbers_and_normalized_tokens_preserve_anchored_word_timings(self):
+        audio = io.BytesIO()
+        with wave.open(audio, "wb") as wav:
+            wav.setparams((1, 2, 24_000, 0, "NONE", "not compressed"))
+            wav.writeframes(bytes(24_000 * 2 * 2))
+        lines = [{"text": "Vi väljer NORMAL 40 i tvättstugan."}]
+        markers = [["a"]]
+        bookmarks = {"a": 0}
+        # Azure speaks "40" as "fyrtio" and "i" with 1-us duration
+        boundaries = [
+            Boundary("Vi", 20_000, 150_000),
+            Boundary("väljer", 170_000, 420_000),
+            Boundary("NORMAL", 450_000, 780_000),
+            Boundary("fyrtio", 800_000, 1_150_000),
+            Boundary("i", 1_180_000, 1_180_001),
+            Boundary("tvättstugan", 1_260_000, 1_850_000),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp)
+            write_clips(destination, lines, markers, audio.getvalue(), bookmarks, boundaries)
+            clip = json.loads((destination / "0.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                [w["word"] for w in clip["words"]],
+                ["Vi", "väljer", "NORMAL", "40", "i", "tvättstugan."],
+            )
+            self.assertEqual(clip["words"][2], {"word": "NORMAL", "start_us": 450_000, "end_us": 780_000})
+            self.assertEqual(clip["words"][3], {"word": "40", "start_us": 780_000, "end_us": 1_180_000})
+            self.assertEqual(clip["words"][5]["start_us"], 1_260_000)
+
 
 if __name__ == "__main__":
     unittest.main()

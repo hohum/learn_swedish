@@ -84,11 +84,14 @@ halloumi. The woods, IKEA and Gothenburg have their own surprises, from a
 dog shaking water everywhere to a tram announcement that catches you out.
 
 Each illustrated page contains Swedish narration, dialogue and a question with
-four responses. Click a response, enter **1–4**, or type the complete Swedish
+multiple responses. Click a response, enter **1–N**, or type the complete Swedish
 response and press **Enter**. Case and final `.?!` do not matter; Swedish spelling
-and accents still do. Wrong choices receive a dry, good-natured reply from your
-wife, then **Try again** returns to the same question. **Continue** follows the
-chosen route after a successful answer. Destination choices are all valid.
+and accents still do. You can change your selected answer directly at any time
+without redoing the page — picking another option plays only that exchange, and
+**Try again** restores the full page text without re-reading the whole page aloud.
+**Continue** follows the chosen route after a valid answer, while the header bar's
+**Page navigator** (`‹`, **1 / N** searchable page & variant jumper, `›`) lets you
+step back/forward or jump directly to any page in the story.
 Nothing records microphone audio, and typed answers are never sent to Azure.
 Progress is session-only. **New outing** appears when you get home and takes
 you straight back to the destination choice. **Restart book** returns to the
@@ -118,8 +121,11 @@ normally once speech finishes), **Left Arrow** to repeat the current sentence,
 toggle **Pause after each sentence** (on by default) to pause automatically at
 each sentence boundary, or use **Skip** (`Ctrl+→`) to skip the
 current question without answering. Replay repeats the current page or feedback.
-Highlighting uses measured word timings and automatically follows the current
-passage in its scroll area.
+Highlighting uses measured word timings (with anchored fallback across numbers
+and symbols), underscores the matching literal English word(s) when **Show
+English hints** is enabled, and automatically scrolls both the story passage and
+the choice list as you follow along, with a spinning indicator whenever uncached
+audio is being fetched from Azure.
 With live speech, **Mattias** reads your lines and the narration, and **Sofie**
 reads your wife's lines at her default pitch and speed. Guests draw from
 **Hillevi**, **Sofie**, and **Mattias** as their roles allow. Each guest keeps
@@ -199,18 +205,21 @@ keyboard voice download below.
    - Open **Välj ditt eget äventyr / Choose your own adventure**, click **Azure
      Speech** in the top-right header bar, enter your **Resource region** and
      paste **KEY 1** into **Speech key**, then click **Use live speech**.
+   - **Remember key on this computer** is checked by default: your region and
+     F0/Speech key are saved locally in your user config folder and live speech
+     defaults to enabled automatically on future launches (use **Forget saved
+     key** to erase it from disk, or uncheck the box for a single-session key).
    - Alternatively, set `SPEECH_REGION` and `SPEECH_KEY` in the environment that
-     launches the app (using the in-app password field avoids leaving keys in
-     shell history).
-   - The app holds your key in memory for the current session only (never saved
-     to disk) and sends only the authored Swedish story lines for synthesis. It
-     uses SSML bookmarks for sentence controls, highlights words when Azure
-     supplies usable word boundaries, caches synthesized lines for the rest of
-     the session, and caps new requests at 20 per minute ([Azure Speech F0 quotas](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-services-quotas-and-limits)).
+     launches the app.
+   - Synthesized story lines and their word timings are stored in a persistent
+     local **TTS cache** across sessions (with a clip count and **Clear TTS
+     cache** button in **Azure Speech**), so repeated lines and pages play
+     immediately without consuming F0 requests, while new requests are capped at
+     20 per minute ([Azure Speech F0 quotas](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-services-quotas-and-limits)).
 
 ## Download and run on Windows 11
 
-Download `learn-swedish-0.7.0-windows-x64.zip` from
+Download `learn-swedish-0.8.0-windows-x64.zip` from
 [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
 inside the extracted folder. Keep the extracted files together. No WSL,
@@ -253,7 +262,7 @@ Ubuntu releases or ARM devices.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.7.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.8.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 

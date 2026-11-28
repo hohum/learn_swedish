@@ -1279,10 +1279,22 @@ pub fn default_story_path() -> Result<PathBuf, String> {
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NavigatorEntry {
+    pub id: String,
+    pub title_sv: String,
+    pub title_en: String,
+    pub scene: Scene,
+    pub active_index: Option<usize>,
+    pub visited: bool,
+}
+
 pub struct Book {
     story: Rc<Story>,
     outing_hub_page: Option<String>,
     seen: HashSet<String>,
+    history: Vec<usize>,
+    forward: Vec<usize>,
     pub pages: Vec<Page>,
     current: usize,
     pub selected: Option<usize>,
@@ -1402,6 +1414,8 @@ impl Book {
             story,
             outing_hub_page,
             seen,
+            history: Vec::new(),
+            forward: Vec::new(),
             pages,
             current,
             selected: None,
@@ -1413,8 +1427,219 @@ impl Book {
         &self.story
     }
 
+    pub fn current_index(&self) -> usize {
+        self.current
+    }
+
     pub fn has_outing_hub(&self) -> bool {
         self.outing_hub_page.is_some()
+    }
+
+    pub fn can_go_back(&self) -> bool {
+        self.finished || !self.history.is_empty() || self.current > 0
+    }
+
+    pub fn can_go_forward(&self) -> bool {
+        !self.finished && (!self.forward.is_empty() || self.current + 1 < self.pages.len())
+    }
+
+    pub fn go_back(&mut self) -> bool {
+        if self.finished {
+            self.finished = false;
+            self.selected = None;
+            if self.history.last() == Some(&self.current) {
+                self.history.pop();
+            }
+            return true;
+        }
+        if let Some(prev) = self.history.pop() {
+            self.forward.push(self.current);
+            self.current = prev;
+            self.selected = None;
+            self.seen.insert(self.pages[self.current].id.clone());
+            return true;
+        }
+        if self.current > 0 {
+            self.forward.push(self.current);
+            self.current -= 1;
+            self.selected = None;
+            self.seen.insert(self.pages[self.current].id.clone());
+            return true;
+        }
+        false
+    }
+
+    pub fn go_forward(&mut self) -> bool {
+        if self.finished {
+            return false;
+        }
+        if let Some(next_idx) = self.forward.pop() {
+            self.history.push(self.current);
+            self.current = next_idx;
+            self.selected = None;
+            self.seen.insert(self.pages[self.current].id.clone());
+            return true;
+        }
+        if self.current + 1 < self.pages.len() {
+            self.history.push(self.current);
+            self.current += 1;
+            self.selected = None;
+            self.seen.insert(self.pages[self.current].id.clone());
+            return true;
+        }
+        false
+    }
+
+    pub fn jump_to_page(&mut self, index: usize) -> bool {
+        if index >= self.pages.len() {
+            return false;
+        }
+        if !self.finished && self.current != index {
+            self.history.push(self.current);
+        }
+        self.forward.clear();
+        self.finished = false;
+        self.selected = None;
+        self.current = index;
+        self.seen.insert(self.pages[self.current].id.clone());
+        true
+    }
+
+    pub fn jump_to_id(&mut self, id: &str, mut choose: impl FnMut(usize) -> usize) -> bool {
+        if let Some(index) = self.pages.iter().position(|p| p.id == id) {
+            return self.jump_to_page(index);
+        }
+        let resolve_target = |target: &str, pages: &[Page], story: &Story| -> String {
+            if target == "done" || pages.iter().any(|p| p.id == target) {
+                return target.to_owned();
+            }
+            for entry in &story.pages {
+                if let PageEntry::Pool {
+                    id: pool_id,
+                    variants,
+                } = entry
+                    && pool_id == target
+                {
+                    if let Some(active) =
+                        variants.iter().find(|v| pages.iter().any(|p| p.id == v.id))
+                    {
+                        return active.id.clone();
+                    }
+                    return variants[0].id.clone();
+                }
+            }
+            target.to_owned()
+        };
+
+        for entry in &self.story.pages {
+            if let PageEntry::Pool { variants, .. } = entry
+                && let Some(variant) = variants.iter().find(|v| v.id == id)
+            {
+                let mut page = variant.clone();
+                page.apply_alts(&mut choose);
+                for choice in &mut page.choices {
+                    if let Some(next) = &mut choice.next {
+                        *next = resolve_target(next, &self.pages, &self.story);
+                    }
+                }
+                let index = self.pages.len();
+                self.pages.push(page);
+                return self.jump_to_page(index);
+            }
+        }
+
+        if let Some(pool) = &self.story.encounters {
+            for route in &pool.routes {
+                for stop in &route.stops {
+                    if let Some(enc) = stop.encounters.iter().find(|e| e.id == id) {
+                        let before_id = resolve_target(&stop.before, &self.pages, &self.story);
+                        let mut choices = vec![Choice {
+                            line: enc.say.clone(),
+                            reply: enc.reply.clone(),
+                            next: Some(before_id),
+                        }];
+                        for distractor in route.distractors.iter().chain(&pool.distractors) {
+                            if choices.len() >= 4 {
+                                break;
+                            }
+                            choices.push(distractor.clone());
+                        }
+                        let mut page = Page {
+                            id: enc.id.clone(),
+                            scene: stop.scene,
+                            title: stop.title.clone(),
+                            setup: vec![enc.setup.clone()],
+                            question: stop.question.clone(),
+                            choices,
+                        };
+                        page.apply_alts(&mut choose);
+                        let index = self.pages.len();
+                        self.pages.push(page);
+                        return self.jump_to_page(index);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub fn navigator_entries(&self, include_variants: bool) -> Vec<NavigatorEntry> {
+        let mut entries: Vec<NavigatorEntry> = self
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(index, page)| NavigatorEntry {
+                id: page.id.clone(),
+                title_sv: page.title.swedish.clone(),
+                title_en: page.title.english.clone(),
+                scene: page.scene,
+                active_index: Some(index),
+                visited: self.seen.contains(&page.id),
+            })
+            .collect();
+        if !include_variants {
+            return entries;
+        }
+        let mut included: HashSet<String> = entries.iter().map(|e| e.id.clone()).collect();
+        for entry in &self.story.pages {
+            if let PageEntry::Pool { variants, .. } = entry {
+                for variant in variants {
+                    if included.insert(variant.id.clone()) {
+                        entries.push(NavigatorEntry {
+                            id: variant.id.clone(),
+                            title_sv: variant.title.swedish.clone(),
+                            title_en: variant.title.english.clone(),
+                            scene: variant.scene,
+                            active_index: None,
+                            visited: self.seen.contains(&variant.id),
+                        });
+                    }
+                }
+            }
+        }
+        if let Some(pool) = &self.story.encounters {
+            for route in &pool.routes {
+                for stop in &route.stops {
+                    for enc in &stop.encounters {
+                        if included.insert(enc.id.clone()) {
+                            entries.push(NavigatorEntry {
+                                id: enc.id.clone(),
+                                title_sv: stop.title.swedish.clone(),
+                                title_en: enc.setup.swedish.clone(),
+                                scene: stop.scene,
+                                active_index: None,
+                                visited: self.seen.contains(&enc.id),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        entries
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
     }
 
     pub fn restart(&mut self, mut choose: impl FnMut(usize) -> usize) {
@@ -1440,8 +1665,8 @@ impl Book {
     }
 
     pub fn answer(&mut self, input: &str) -> Result<Choice, String> {
-        if self.finished || self.selected.is_some() {
-            return Err("Continue or try again before answering another question.".into());
+        if self.finished {
+            return Err("Restart or start a new outing before answering another question.".into());
         }
         let max_choice = self.page().choices.len();
         let normalized = normalise(input);
@@ -1500,6 +1725,8 @@ impl Book {
     }
 
     fn follow(&mut self, next: &str) {
+        self.history.push(self.current);
+        self.forward.clear();
         if next == "done" {
             self.finished = true;
         } else {
@@ -1575,24 +1802,27 @@ fn insert_encounters(
             }
             let count = choices.len();
             choices.rotate_left(choose(count) % count);
-            let link = pages
+            let after_pos = pages
+                .iter()
+                .position(|page| page.id == after_id)
+                .expect("Validated encounter stop must match an existing page");
+            let link = pages[after_pos]
+                .choices
                 .iter_mut()
-                .find(|page| page.id == after_id)
-                .and_then(|page| {
-                    page.choices
-                        .iter_mut()
-                        .find(|choice| choice.next.as_deref() == Some(before_id.as_str()))
-                })
+                .find(|choice| choice.next.as_deref() == Some(before_id.as_str()))
                 .expect("Validated encounter stop must match an existing link");
             link.next = Some(chosen.id.clone());
-            pages.push(Page {
-                id: chosen.id.clone(),
-                scene: stop.scene,
-                title: stop.title.clone(),
-                setup: vec![chosen.setup.clone()],
-                question: stop.question.clone(),
-                choices,
-            });
+            pages.insert(
+                after_pos + 1,
+                Page {
+                    id: chosen.id.clone(),
+                    scene: stop.scene,
+                    title: stop.title.clone(),
+                    setup: vec![chosen.setup.clone()],
+                    question: stop.question.clone(),
+                    choices,
+                },
+            );
         }
     }
 }
@@ -1909,9 +2139,7 @@ mod tests {
                 .next
                 .is_none()
         );
-        assert!(book.answer("1").is_err());
-        book.continue_story();
-        assert_eq!(book.page().id, "intro");
+        // Changing your answer directly on the same page works without resetting the page.
         let right = book
             .page()
             .choices
@@ -1922,8 +2150,25 @@ mod tests {
             .swedish
             .to_uppercase();
         assert_eq!(book.answer(&right).unwrap().next.as_deref(), Some("hub"));
+        // Switching back to wrong and calling continue_story ("Try again") stays on intro.
+        assert!(
+            book.answer(&(wrong + 1).to_string())
+                .unwrap()
+                .next
+                .is_none()
+        );
+        book.continue_story();
+        assert_eq!(book.page().id, "intro");
+        assert!(book.selected.is_none());
+        assert_eq!(book.answer(&right).unwrap().next.as_deref(), Some("hub"));
         book.continue_story();
         assert_eq!(book.page().id, "hub");
+        assert!(book.go_back());
+        assert_eq!(book.page().id, "intro");
+        assert!(book.go_forward());
+        assert_eq!(book.page().id, "hub");
+        assert!(book.jump_to_id("enc-bag", |_| 0));
+        assert_eq!(book.page().id, "enc-bag");
     }
 
     #[test]
