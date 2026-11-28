@@ -106,6 +106,7 @@ Every spoken or displayed story utterance (`<title>`, `<line>`, `<question>`, `<
 - `<sv>` *(required, non-empty)*: Swedish text spoken by TTS and displayed at all times.
 - `<lit>` *(optional)*: Word-for-word literal English gloss shown in italics when **Show English hints** is enabled (for example, `rain-jacket-the` for `regnjackan`). If omitted, only `<sv>` and `<en>` are rendered.
 - `<en>` *(required on dialogue, questions, `<say>`, and `<reply>`; optional on `<title>`)*: Natural idiomatic English translation shown when **Show English hints** is enabled.
+- `<alt>` *(optional wrapper inside any spoken element — minimum 2 when used)*: Provides multiple interchangeable `<sv>`/`<lit>`/`<en>` phrasings for the same speaker turn so every participant's wording varies at random across playthroughs.
 
 ---
 
@@ -202,14 +203,15 @@ Each `<page>` and encounter `<stop>` specifies one of the built-in vector scene 
   - `"by-index"`: Rotates each page's choices left by `page_index mod choice_count` so correct answers authored first do not always appear as option `1`.
   - `"random"`: Randomly rotates choice order on each playthrough.
 
-### `<page>` Structure & Rules
+### `<page>` and `<pool>` Structure & Rules
 
-- `id` *(required)*: Unique page identifier. Reserved value `"done"` MUST NOT be used as a `<page id>`.
+- `<pool id="...">` *(optional wrapper inside `<pages>`)*: Groups one or more alternative `<page>` elements under a shared logical `id` (for example, randomized leaving-home or returning-home scenarios). On each playthrough, one `<page>` not shown in the immediately preceding run is selected, its choices are rotated randomly, and any `start`, `outing-hub`, `<choice next="...">`, or `<stop>` targeting the `<pool id>` resolves to the chosen `<page>`.
+- `id` *(required)*: Unique identifier across all `<page>`, `<pool>`, and `<encounter>` elements. Reserved value `"done"` MUST NOT be used.
 - `scene` *(required)*: One of `home`, `woods`, `shop`, `road`, `ikea`, `train`, `city`.
 - `<title>` *(required)*: Page heading (spoken first when reading the page aloud; `actor` defaults to `cast/@narrator`).
 - `<setup>` *(optional)*: Zero or more `<line actor="...">` elements setting the scene before the question.
 - `<question>` *(required)*: The prompt asking the player how to respond (`actor` defaults to `cast/@responder`).
-- `<choices>` *(required)*: Contains **2 to 4** `<choice>` elements:
+- `<choices>` *(required)*: Contains **2 to 8** `<choice>` elements:
   - Optional `next` attribute on `<choice>`:
     - `next="<page-id>"`: Valid choice that advances to `<page-id>` when **Continue** is clicked.
     - `next="done"`: Valid choice that completes the story when **Continue** is clicked.
@@ -300,7 +302,7 @@ When loading any XML file, the story engine validates all of the following befor
 1. **Version & metadata:** `<story version="1.0">` and non-empty `<meta><title>`.
 2. **Valid cast references:** Every explicit or defaulted `actor` ID on any line, title, question, choice, distractor, or encounter MUST exist in `<cast>`, and every voice in `voices` MUST be one of `mattias`, `sofie`, or `hillevi`.
 3. **Unique IDs:** Every `<page id>` and `<encounter id>` MUST be non-empty, unique across the entire document, and not equal to `"done"`.
-4. **Choice rules:** Every `<page>` MUST have 2 to 4 choices, at least one choice with `next` set, and distinct normalized `<say><sv>` strings (case-insensitive, ignoring trailing `.`, `!`, `?`) so typed Swedish answers are unambiguous.
+4. **Choice rules:** Every `<page>` MUST have 2 to 8 choices, at least one choice with `next` set, and distinct normalized `<say><sv>` strings (case-insensitive, ignoring trailing `.`, `!`, `?`) so typed Swedish answers are unambiguous.
 5. **Graph integrity:**
    - `start` (and `outing-hub`, if specified) MUST reference an existing `<page id>`.
    - Every `next` target on `<choice>` MUST be either `"done"` or an existing `<page id>`.

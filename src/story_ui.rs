@@ -17,7 +17,7 @@ struct Reader {
     transcript: gtk::Label,
     text_scroll: gtk::ScrolledWindow,
     choice_scroll: gtk::ScrolledWindow,
-    choices: [gtk::Button; 4],
+    choices: [gtk::Button; 8],
     entry: gtk::Entry,
     submit: gtk::Button,
     skip: gtk::Button,
@@ -168,15 +168,16 @@ impl Reader {
             self.scene.set(Scene::Home);
             self.illustration.queue_draw();
             self.header_title.set_title("Story Reader");
-            self.header_title.set_subtitle("Open a Story XML file");
+            self.header_title
+                .set_subtitle("Choose a story from Stories");
             self.title
                 .set_label("Ingen berättelse inläst · No story loaded");
-            self.transcript
-                .set_text("Use Open story… in the header bar to load a Story XML (.xml) file.");
-            self.controls();
-            self.status.set_label(
-                "No story XML loaded. Click Open story… above to select a .xml story file.",
+            self.transcript.set_text(
+                "Use Stories in the header bar to pick a bundled story or open an XML file.",
             );
+            self.controls();
+            self.status
+                .set_label("No story XML loaded. Click Stories above to pick a story.");
             return;
         };
         self.header_title.set_title(&book.story().title);
@@ -193,12 +194,12 @@ impl Reader {
             if book.has_outing_hub() {
                 self.next.set_label("Ny utflykt · New outing");
                 self.status.set_label(
-                    "You are home again. Choose New outing for another destination, or Open story… for another XML book.",
+                    "You are home again. Choose New outing for another destination, or Stories for another book.",
                 );
             } else {
                 self.next.set_label("Börja om · Play again");
                 self.status.set_label(
-                    "Story complete. Choose Play again to restart, or Open story… for another XML book.",
+                    "Story complete. Choose Play again to restart, or Stories for another book.",
                 );
             }
         } else {
@@ -382,10 +383,19 @@ fn build_ui(
     let back = gtk::Button::with_label("Meny · Menu");
     back.set_widget_name("activity-menu");
     header.pack_start(&back);
-    let open_story = gtk::Button::with_label("Open story…");
-    open_story.set_widget_name("open-story");
-    open_story.set_tooltip_text(Some("Load any Choose-Your-Own-Adventure Story XML file"));
-    header.pack_start(&open_story);
+    let stories_list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    stories_list.set_margin_top(6);
+    stories_list.set_margin_bottom(6);
+    stories_list.set_margin_start(6);
+    stories_list.set_margin_end(6);
+    let stories_popover = gtk::Popover::builder().child(&stories_list).build();
+    let stories_menu = gtk::MenuButton::builder()
+        .label("Stories")
+        .popover(&stories_popover)
+        .tooltip_text("Switch between available stories")
+        .build();
+    stories_menu.set_widget_name("stories-menu");
+    header.pack_start(&stories_menu);
     let azure = gtk::Button::with_label("Azure Speech");
     azure.set_widget_name("azure-settings");
     azure.set_tooltip_text(Some("Set up live story audio"));
@@ -523,12 +533,14 @@ fn build_ui(
         restart: restart.clone(),
         speaking: Cell::new(false),
     });
-    open_story.connect_clicked(glib::clone!(
+    stories_popover.connect_show(glib::clone!(
         #[weak]
         reader,
         #[weak]
         window,
-        move |_| prompt_open_story(&reader, &window)
+        #[weak]
+        stories_list,
+        move |popover| populate_stories_popover(popover, &stories_list, &reader, &window)
     ));
     azure.connect_clicked(glib::clone!(
         #[weak]
@@ -684,6 +696,75 @@ fn build_ui(
         }
     });
     (window, reader)
+}
+
+fn populate_stories_popover(
+    popover: &gtk::Popover,
+    list: &gtk::Box,
+    reader: &Rc<Reader>,
+    window: &adw::ApplicationWindow,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    let active_canonical = reader
+        .story_path
+        .borrow()
+        .as_ref()
+        .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()));
+    for entry in learn_swedish::adventure::discover_catalog() {
+        let is_active = active_canonical.as_ref().is_some_and(|active| {
+            let candidate =
+                std::fs::canonicalize(&entry.path).unwrap_or_else(|_| entry.path.clone());
+            active == &candidate
+        });
+        let prefix = if is_active { "✓ " } else { "   " };
+        let markup = format!(
+            "<b>{}{}</b>\n<span size=\"small\" alpha=\"75%\">{}</span>",
+            prefix,
+            glib::markup_escape_text(&entry.title),
+            glib::markup_escape_text(&entry.subtitle)
+        );
+        let label = gtk::Label::new(None);
+        label.set_markup(&markup);
+        label.set_xalign(0.0);
+        label.set_wrap(true);
+        label.set_max_width_chars(42);
+        let button = gtk::Button::builder().child(&label).build();
+        button.add_css_class("flat");
+        let path = entry.path;
+        button.connect_clicked(glib::clone!(
+            #[weak]
+            popover,
+            #[weak]
+            reader,
+            move |_| {
+                popover.popdown();
+                if let Err(error) = reader.load_file(&path) {
+                    reader.status.set_label(&error);
+                }
+            }
+        ));
+        list.append(&button);
+    }
+    list.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    let browse_label = gtk::Label::new(Some("Open external XML file…"));
+    browse_label.set_xalign(0.0);
+    let browse = gtk::Button::builder().child(&browse_label).build();
+    browse.add_css_class("flat");
+    browse.connect_clicked(glib::clone!(
+        #[weak]
+        popover,
+        #[weak]
+        reader,
+        #[weak]
+        window,
+        move |_| {
+            popover.popdown();
+            prompt_open_story(&reader, &window);
+        }
+    ));
+    list.append(&browse);
 }
 
 fn prompt_open_story(reader: &Rc<Reader>, window: &adw::ApplicationWindow) {
@@ -965,6 +1046,7 @@ print("ok")
 "#;
 
     // 1. Verify runtime discovery loads external XML from stories/ and fits within 900×600.
+    assert!(!learn_swedish::adventure::discover_catalog().is_empty());
     let (default_win, default_reader) = build(app, Rc::new(Speech::for_live_test(MOCK_WORKER)));
     assert!(default_reader.story_path.borrow().is_some());
     assert!(default_reader.book.borrow().is_some());

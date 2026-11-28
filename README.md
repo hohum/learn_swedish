@@ -56,6 +56,11 @@ At startup, choose **Välj ditt eget äventyr / Choose your own adventure** to o
 ("A moderately adventurous Saturday"). You are the husband; your Swedish-speaking
 wife helps you find the words. Every outing starts at home and returns home:
 
+- **Cleaning day & the shared laundry (*tvättstuga*):** washing dishes, clearing
+  clutter, battling a prehistoric electronic laundry-booking terminal and crude
+  blue LCD washer/dryer menus, vacuuming-before-mopping arguments,
+  passive-aggressive apologies, lint filters one and two, and warm-sheets
+  reconciliation.
 - **The woods:** rain gear, muddy paths, a dog walker, unfamiliar berries,
   a toilet stop and a rainy walk home.
 - **Willys:** a shopping list, kilos versus individual items, finding the dairy
@@ -65,8 +70,15 @@ wife helps you find the words. Every outing starts at home and returns home:
 - **Gothenburg by train:** tickets, delays, a cancelled train and replacement
   bus, ordering fika, sharing a café table, a toilet code and the journey home.
 
-The adventure has 335 possible pages, including 300 new encounters. Each
-outing draws three encounters from its own pools. At Willys, you might buy
+The expanded adventure spans 434 unique pages — including 64 randomized
+leaving-home combinations (from dead phone batteries, coffee stains and deceptive
+sunshine to snapped shoelaces, hallway rubbish bags and missing glasses), all
+five Saturday activities side-by-side on the main choice page, spontaneous
+encounters where you explain in varied ways that your Swedish is still shaky and
+offer to practise if they aren't rushed (or switch to English if they are, with
+every participant's phrasing randomized across `<alt>` variants), 330 randomized
+route encounters, and 64 randomized returning-home and Saturday-evening
+combinations (without repeating seen scenarios). At Willys, you might buy
 three ripe pears, hunt for wholegrain mustard, or pick a substitute for sold-out
 halloumi. The woods, IKEA and Gothenburg have their own surprises, from a
 dog shaking water everywhere to a tram announcement that catches you out.
@@ -129,8 +141,9 @@ and loads the first one it finds.
 To read any other story formatted according to the XML specification without
 recompiling the app:
 
-- Click **Open story…** in the story window's top-left header bar and choose any
-  `.xml` story file, or
+- Click **Stories** in the story window's top-left header bar to switch directly
+  to any `.xml` story in `stories/` (or choose **Open external XML file…** for a
+  file elsewhere), or
 - Launch the app with a story path on the command line:
   ```sh
   learn-swedish path/to/story.xml
@@ -140,7 +153,7 @@ recompiling the app:
   default startup book.
 
 Every loaded file is checked before replacing the current session (cast voices,
-2–4 distinct choices per page, acyclic paths reaching `"done"`, and optional
+2–8 distinct choices per page, acyclic paths reaching `"done"`, and optional
 randomized encounter pools). Authoring rules, element reference, and a minimal
 two-choice example (`fika.xml`) are documented in
 [docs/story-xml-spec.md](docs/story-xml-spec.md), with an accompanying W3C XML
@@ -197,7 +210,7 @@ keyboard voice download below.
 
 ## Download and run on Windows 11
 
-Download `learn-swedish-0.6.0-windows-x64.zip` from
+Download `learn-swedish-0.7.0-windows-x64.zip` from
 [GitHub Releases](https://github.com/hohum/learn_swedish/releases/latest).
 Right-click it, choose **Extract All**, then open `bin\learn-swedish.exe`
 inside the extracted folder. Keep the extracted files together. No WSL,
@@ -240,7 +253,7 @@ Ubuntu releases or ARM devices.
 In the directory containing the download:
 
 ```sh
-sudo apt install ./learn-swedish_0.6.0_ubuntu26.04_amd64.deb
+sudo apt install ./learn-swedish_0.7.0_ubuntu26.04_amd64.deb
 learn-swedish
 ```
 

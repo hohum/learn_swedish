@@ -38,31 +38,93 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:complexType name="TitleTextType">
+  <xs:complexType name="TitleAltType">
     <xs:sequence>
       <xs:element name="sv" type="NonEmptyString"/>
       <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
       <xs:element name="en" type="xs:string" minOccurs="0"/>
     </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SpokenAltType">
+    <xs:sequence>
+      <xs:element name="sv" type="NonEmptyString"/>
+      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+      <xs:element name="en" type="NonEmptyString"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TitleTextType">
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="sv" type="NonEmptyString"/>
+        <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+        <xs:element name="en" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="alt" type="TitleAltType" minOccurs="2" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:choice>
     <xs:attribute name="actor" type="NonEmptyString" use="optional"/>
   </xs:complexType>
 
   <xs:complexType name="SpokenLineType">
-    <xs:sequence>
-      <xs:element name="sv" type="NonEmptyString"/>
-      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
-      <xs:element name="en" type="NonEmptyString"/>
-    </xs:sequence>
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="sv" type="NonEmptyString"/>
+        <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+        <xs:element name="en" type="NonEmptyString"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="alt" type="SpokenAltType" minOccurs="2" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:choice>
     <xs:attribute name="actor" type="NonEmptyString" use="optional"/>
   </xs:complexType>
 
   <xs:complexType name="DialogueLineType">
-    <xs:sequence>
-      <xs:element name="sv" type="NonEmptyString"/>
-      <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
-      <xs:element name="en" type="NonEmptyString"/>
-    </xs:sequence>
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="sv" type="NonEmptyString"/>
+        <xs:element name="lit" type="NonEmptyString" minOccurs="0"/>
+        <xs:element name="en" type="NonEmptyString"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="alt" type="SpokenAltType" minOccurs="2" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:choice>
     <xs:attribute name="actor" type="NonEmptyString" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="PageType">
+    <xs:sequence>
+      <xs:element name="title" type="TitleTextType"/>
+      <xs:element name="setup" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="line" type="DialogueLineType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="question" type="SpokenLineType"/>
+      <xs:element name="choices">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="choice" minOccurs="2" maxOccurs="8">
+              <xs:complexType>
+                <xs:sequence>
+                  <xs:element name="say" type="SpokenLineType"/>
+                  <xs:element name="reply" type="SpokenLineType"/>
+                </xs:sequence>
+                <xs:attribute name="next" type="NonEmptyString" use="optional"/>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="NonEmptyString" use="required"/>
+    <xs:attribute name="scene" type="SceneType" use="required"/>
   </xs:complexType>
 
   <xs:element name="story">
@@ -106,40 +168,17 @@
 
         <xs:element name="pages">
           <xs:complexType>
-            <xs:sequence>
-              <xs:element name="page" maxOccurs="unbounded">
+            <xs:choice maxOccurs="unbounded">
+              <xs:element name="page" type="PageType"/>
+              <xs:element name="pool">
                 <xs:complexType>
                   <xs:sequence>
-                    <xs:element name="title" type="TitleTextType"/>
-                    <xs:element name="setup" minOccurs="0">
-                      <xs:complexType>
-                        <xs:sequence>
-                          <xs:element name="line" type="DialogueLineType" minOccurs="0" maxOccurs="unbounded"/>
-                        </xs:sequence>
-                      </xs:complexType>
-                    </xs:element>
-                    <xs:element name="question" type="SpokenLineType"/>
-                    <xs:element name="choices">
-                      <xs:complexType>
-                        <xs:sequence>
-                          <xs:element name="choice" minOccurs="2" maxOccurs="4">
-                            <xs:complexType>
-                              <xs:sequence>
-                                <xs:element name="say" type="SpokenLineType"/>
-                                <xs:element name="reply" type="SpokenLineType"/>
-                              </xs:sequence>
-                              <xs:attribute name="next" type="NonEmptyString" use="optional"/>
-                            </xs:complexType>
-                          </xs:element>
-                        </xs:sequence>
-                      </xs:complexType>
-                    </xs:element>
+                    <xs:element name="page" type="PageType" maxOccurs="unbounded"/>
                   </xs:sequence>
                   <xs:attribute name="id" type="NonEmptyString" use="required"/>
-                  <xs:attribute name="scene" type="SceneType" use="required"/>
                 </xs:complexType>
               </xs:element>
-            </xs:sequence>
+            </xs:choice>
             <xs:attribute name="choice-rotation" type="ChoiceRotationType" use="optional" default="none"/>
           </xs:complexType>
         </xs:element>

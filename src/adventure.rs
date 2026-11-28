@@ -59,6 +59,13 @@ pub struct ActorSpec {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextVariant {
+    pub swedish: String,
+    pub literal: Option<String>,
+    pub english: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Line {
     pub actor_id: String,
     pub speaker: String,
@@ -66,6 +73,7 @@ pub struct Line {
     pub swedish: String,
     pub literal: Option<String>,
     pub english: String,
+    pub alts: Vec<TextVariant>,
 }
 
 impl Line {
@@ -76,6 +84,15 @@ impl Line {
             english: self.english.clone(),
             voice: Some(self.voice),
             speaker: Some(self.speaker.clone()),
+        }
+    }
+
+    fn apply_alt(&mut self, choose: &mut impl FnMut(usize) -> usize) {
+        if !self.alts.is_empty() {
+            let chosen = &self.alts[choose(self.alts.len()) % self.alts.len()];
+            self.swedish = chosen.swedish.clone();
+            self.literal = chosen.literal.clone();
+            self.english = chosen.english.clone();
         }
     }
 }
@@ -104,6 +121,18 @@ impl Page {
             .chain(std::iter::once(self.question.phrase()))
             .chain(self.choices.iter().map(|choice| choice.line.phrase()))
             .collect()
+    }
+
+    fn apply_alts(&mut self, choose: &mut impl FnMut(usize) -> usize) {
+        self.title.apply_alt(choose);
+        for line in &mut self.setup {
+            line.apply_alt(choose);
+        }
+        self.question.apply_alt(choose);
+        for choice in &mut self.choices {
+            choice.line.apply_alt(choose);
+            choice.reply.apply_alt(choose);
+        }
     }
 }
 
@@ -173,6 +202,12 @@ pub struct EncounterPool {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PageEntry {
+    Single(Box<Page>),
+    Pool { id: String, variants: Vec<Page> },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Story {
     pub id: Option<String>,
     pub lang: Option<String>,
@@ -186,7 +221,7 @@ pub struct Story {
     pub actors: Vec<ActorSpec>,
     pub ending: Ending,
     pub choice_rotation: ChoiceRotation,
-    pub pages: Vec<Page>,
+    pub pages: Vec<PageEntry>,
     pub encounters: Option<EncounterPool>,
 }
 
@@ -341,29 +376,22 @@ impl Story {
         let protagonist = resolve_default("protagonist", &["protagonist", "you"], 0)?;
         let responder = resolve_default("responder", &["responder"], 1)?;
 
-        let parse_line = |el: &Element,
-                          default_actor: Option<&str>,
-                          allow_empty_english: bool|
-         -> Result<Line, String> {
-            el.check_allowed_attrs(&["actor"])?;
+        let parse_text_variant = |el: &Element,
+                                  parent_name: &str,
+                                  allow_empty_english: bool|
+         -> Result<TextVariant, String> {
             el.check_allowed_children(&["sv", "lit", "en"])?;
-            let actor_id = match el.attr("actor").map(str::trim).filter(|s| !s.is_empty()) {
-                Some(explicit) => explicit,
-                None => default_actor
-                    .ok_or_else(|| format!("<{}> requires an actor=\"...\" attribute", el.name))?,
-            };
-            let spec = actor_by_id
-                .get(actor_id)
-                .ok_or_else(|| format!("<{}> references unknown actor {actor_id:?}", el.name))?;
             let swedish = el.required_child("sv")?.normalized_text()?;
             if swedish.is_empty() {
-                return Err(format!("<{}><sv> must not be empty", el.name));
+                return Err(format!("<{parent_name}><sv> must not be empty"));
             }
             let literal = match el.child("lit")? {
                 Some(lit_el) => {
                     let lit = lit_el.normalized_text()?;
                     if lit.is_empty() {
-                        return Err(format!("<{}><lit> must not be empty when present", el.name));
+                        return Err(format!(
+                            "<{parent_name}><lit> must not be empty when present"
+                        ));
                     }
                     Some(lit)
                 }
@@ -372,19 +400,74 @@ impl Story {
             let english = match el.child("en")? {
                 Some(en_el) => en_el.normalized_text()?,
                 None if allow_empty_english => String::new(),
-                None => return Err(format!("<{}> is missing required <en> element", el.name)),
+                None => {
+                    return Err(format!("<{parent_name}> is missing required <en> element"));
+                }
             };
             if !allow_empty_english && english.is_empty() {
-                return Err(format!("<{}><en> must not be empty", el.name));
+                return Err(format!("<{parent_name}><en> must not be empty"));
             }
-            Ok(Line {
-                actor_id: spec.id.clone(),
-                speaker: spec.label.clone(),
-                voice: spec.voices[0],
+            Ok(TextVariant {
                 swedish,
                 literal,
                 english,
             })
+        };
+
+        let parse_line = |el: &Element,
+                          default_actor: Option<&str>,
+                          allow_empty_english: bool|
+         -> Result<Line, String> {
+            el.check_allowed_attrs(&["actor"])?;
+            let actor_id = match el.attr("actor").map(str::trim).filter(|s| !s.is_empty()) {
+                Some(explicit) => explicit,
+                None => default_actor
+                    .ok_or_else(|| format!("<{}> requires an actor=\"...\" attribute", el.name))?,
+            };
+            let spec = actor_by_id
+                .get(actor_id)
+                .ok_or_else(|| format!("<{}> references unknown actor {actor_id:?}", el.name))?;
+            if el.children.iter().any(|c| c.name == "alt") {
+                el.check_allowed_children(&["alt"])?;
+                if !el.text.trim().is_empty() {
+                    return Err(format!(
+                        "<{}> with <alt> must not contain direct text",
+                        el.name
+                    ));
+                }
+                if el.children.len() < 2 {
+                    return Err(format!(
+                        "<{}> with <alt> must contain at least 2 <alt> elements",
+                        el.name
+                    ));
+                }
+                let mut alts = Vec::with_capacity(el.children.len());
+                for alt_el in &el.children {
+                    alt_el.check_allowed_attrs(&[])?;
+                    alts.push(parse_text_variant(alt_el, &el.name, allow_empty_english)?);
+                }
+                let first = &alts[0];
+                Ok(Line {
+                    actor_id: spec.id.clone(),
+                    speaker: spec.label.clone(),
+                    voice: spec.voices[0],
+                    swedish: first.swedish.clone(),
+                    literal: first.literal.clone(),
+                    english: first.english.clone(),
+                    alts,
+                })
+            } else {
+                let single = parse_text_variant(el, &el.name, allow_empty_english)?;
+                Ok(Line {
+                    actor_id: spec.id.clone(),
+                    speaker: spec.label.clone(),
+                    voice: spec.voices[0],
+                    swedish: single.swedish,
+                    literal: single.literal,
+                    english: single.english,
+                    alts: Vec::new(),
+                })
+            }
         };
 
         let ending = if let Some(ending_el) = root.child("ending")? {
@@ -407,16 +490,16 @@ impl Story {
                     swedish: "Bra jobbat! Berättelsen är slut.".into(),
                     literal: Some("Good worked! Story-the is finished.".into()),
                     english: "Well done! You have reached the end of the story.".into(),
+                    alts: Vec::new(),
                 },
             }
         };
 
         let pages_el = root.required_child("pages")?;
         pages_el.check_allowed_attrs(&["choice-rotation"])?;
-        pages_el.check_allowed_children(&["page"])?;
+        pages_el.check_allowed_children(&["page", "pool"])?;
         let choice_rotation = ChoiceRotation::parse(pages_el.attr("choice-rotation"))?;
-        let mut pages = Vec::new();
-        for page_el in &pages_el.children {
+        let parse_page_el = |page_el: &Element| -> Result<Page, String> {
             page_el.check_allowed_attrs(&["id", "scene"])?;
             page_el.check_allowed_children(&["title", "setup", "question", "choices"])?;
             let page_id = page_el.required_attr("id")?.to_owned();
@@ -458,24 +541,51 @@ impl Story {
                     next,
                 });
             }
-            pages.push(Page {
+            Ok(Page {
                 id: page_id,
                 scene,
                 title: page_title,
                 setup,
                 question,
                 choices,
-            });
+            })
+        };
+        let mut pages = Vec::new();
+        for entry_el in &pages_el.children {
+            if entry_el.name == "pool" {
+                entry_el.check_allowed_attrs(&["id"])?;
+                entry_el.check_allowed_children(&["page"])?;
+                let pool_id = entry_el.required_attr("id")?.to_owned();
+                let mut variants = Vec::new();
+                for page_el in &entry_el.children {
+                    variants.push(parse_page_el(page_el)?);
+                }
+                if variants.is_empty() {
+                    return Err(format!(
+                        "<pool id={pool_id:?}> must contain at least one <page>"
+                    ));
+                }
+                pages.push(PageEntry::Pool {
+                    id: pool_id,
+                    variants,
+                });
+            } else {
+                pages.push(PageEntry::Single(Box::new(parse_page_el(entry_el)?)));
+            }
         }
         if pages.is_empty() {
-            return Err("<pages> must contain at least one <page>".into());
+            return Err("<pages> must contain at least one <page> or <pool>".into());
         }
 
+        let first_entry_id = match &pages[0] {
+            PageEntry::Single(p) => p.id.clone(),
+            PageEntry::Pool { id, .. } => id.clone(),
+        };
         let start = root
             .attr("start")
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map_or_else(|| pages[0].id.clone(), str::to_owned);
+            .map_or(first_entry_id, str::to_owned);
         let outing_hub = root
             .attr("outing-hub")
             .map(str::trim)
@@ -584,19 +694,27 @@ impl Story {
         Ok(story)
     }
 
+    pub fn all_pages(&self) -> impl Iterator<Item = &Page> {
+        self.pages.iter().flat_map(|entry| match entry {
+            PageEntry::Single(page) => std::slice::from_ref(page.as_ref()),
+            PageEntry::Pool { variants, .. } => variants.as_slice(),
+        })
+    }
+
     fn validate(&self) -> Result<(), String> {
         let mut all_ids = HashSet::new();
         let mut page_map = HashMap::new();
-        for page in &self.pages {
+        let mut pool_map: HashMap<&str, &[Page]> = HashMap::new();
+        fn validate_page<'a>(page: &'a Page, all_ids: &mut HashSet<&'a str>) -> Result<(), String> {
             if page.id == "done" {
                 return Err("\"done\" is reserved and cannot be used as a <page id>".into());
             }
             if !all_ids.insert(page.id.as_str()) {
-                return Err(format!("Duplicate page id {:?}", page.id));
+                return Err(format!("Duplicate id {:?}", page.id));
             }
-            if !(2..=4).contains(&page.choices.len()) {
+            if !(2..=8).contains(&page.choices.len()) {
                 return Err(format!(
-                    "Page {:?} has {} choices; expected 2 to 4",
+                    "Page {:?} has {} choices; expected 2 to 8",
                     page.id,
                     page.choices.len()
                 ));
@@ -609,35 +727,70 @@ impl Story {
             }
             let mut answers = HashSet::new();
             for choice in &page.choices {
-                let norm = normalise(&choice.line.swedish);
-                if norm.is_empty() || !answers.insert(norm) {
-                    return Err(format!(
-                        "Page {:?} has duplicate or empty normalized Swedish choices",
-                        page.id
-                    ));
+                if choice.line.alts.is_empty() {
+                    let norm = normalise(&choice.line.swedish);
+                    if norm.is_empty() || !answers.insert(norm) {
+                        return Err(format!(
+                            "Page {:?} has duplicate or empty normalized Swedish choices",
+                            page.id
+                        ));
+                    }
+                } else {
+                    for alt in &choice.line.alts {
+                        let norm = normalise(&alt.swedish);
+                        if norm.is_empty() || !answers.insert(norm) {
+                            return Err(format!(
+                                "Page {:?} has duplicate or empty normalized Swedish <alt> choices",
+                                page.id
+                            ));
+                        }
+                    }
                 }
             }
-            page_map.insert(page.id.as_str(), page);
+            Ok(())
+        }
+        for entry in &self.pages {
+            match entry {
+                PageEntry::Single(page) => {
+                    validate_page(page, &mut all_ids)?;
+                    page_map.insert(page.id.as_str(), page.as_ref());
+                }
+                PageEntry::Pool { id, variants } => {
+                    if id == "done" {
+                        return Err("\"done\" is reserved and cannot be used as a <pool id>".into());
+                    }
+                    if !all_ids.insert(id.as_str()) {
+                        return Err(format!("Duplicate id {id:?}"));
+                    }
+                    for variant in variants {
+                        validate_page(variant, &mut all_ids)?;
+                        page_map.insert(variant.id.as_str(), variant);
+                    }
+                    pool_map.insert(id.as_str(), variants.as_slice());
+                }
+            }
         }
 
-        if !page_map.contains_key(self.start.as_str()) {
+        let valid_target =
+            |target: &str| page_map.contains_key(target) || pool_map.contains_key(target);
+        if !valid_target(&self.start) {
             return Err(format!(
                 "Story start page {:?} does not exist in <pages>",
                 self.start
             ));
         }
         if let Some(hub) = &self.outing_hub
-            && !page_map.contains_key(hub.as_str())
+            && !valid_target(hub)
         {
             return Err(format!(
                 "Story outing-hub page {hub:?} does not exist in <pages>"
             ));
         }
-        for page in &self.pages {
+        for page in self.all_pages() {
             for choice in &page.choices {
                 if let Some(next) = &choice.next
                     && next != "done"
-                    && !page_map.contains_key(next.as_str())
+                    && !valid_target(next)
                 {
                     return Err(format!(
                         "Page {:?} links to unknown next page {next:?}",
@@ -683,23 +836,30 @@ impl Story {
                     ));
                 }
                 for stop in &route.stops {
-                    let Some(after_page) = page_map.get(stop.after.as_str()) else {
-                        return Err(format!(
-                            "Encounter stop after={:?} references unknown page",
-                            stop.after
-                        ));
-                    };
-                    if stop.before != "done" && !page_map.contains_key(stop.before.as_str()) {
+                    if stop.before != "done" && !valid_target(&stop.before) {
                         return Err(format!(
                             "Encounter stop before={:?} references unknown page",
                             stop.before
                         ));
                     }
-                    if !after_page
-                        .choices
-                        .iter()
-                        .any(|c| c.next.as_deref() == Some(stop.before.as_str()))
-                    {
+                    let has_link = if let Some(after_page) = page_map.get(stop.after.as_str()) {
+                        after_page
+                            .choices
+                            .iter()
+                            .any(|c| c.next.as_deref() == Some(stop.before.as_str()))
+                    } else if let Some(variants) = pool_map.get(stop.after.as_str()) {
+                        variants.iter().all(|p| {
+                            p.choices
+                                .iter()
+                                .any(|c| c.next.as_deref() == Some(stop.before.as_str()))
+                        })
+                    } else {
+                        return Err(format!(
+                            "Encounter stop after={:?} references unknown page",
+                            stop.after
+                        ));
+                    };
+                    if !has_link {
                         return Err(format!(
                             "Page {:?} has no choice linking to {:?} for encounter stop",
                             stop.after, stop.before
@@ -741,6 +901,7 @@ impl Story {
         fn dfs<'a>(
             id: &'a str,
             pages: &HashMap<&'a str, &'a Page>,
+            pools: &HashMap<&'a str, &'a [Page]>,
             states: &mut HashMap<&'a str, State>,
         ) -> Result<(), String> {
             if id == "done" {
@@ -754,19 +915,28 @@ impl Story {
                 None => {}
             }
             states.insert(id, State::Visiting);
-            let page = pages[id];
-            for choice in &page.choices {
-                if let Some(next) = &choice.next {
-                    dfs(next, pages, states)?;
+            if let Some(page) = pages.get(id) {
+                for choice in &page.choices {
+                    if let Some(next) = &choice.next {
+                        dfs(next, pages, pools, states)?;
+                    }
+                }
+            } else if let Some(variants) = pools.get(id) {
+                for variant in *variants {
+                    for choice in &variant.choices {
+                        if let Some(next) = &choice.next {
+                            dfs(next, pages, pools, states)?;
+                        }
+                    }
                 }
             }
             states.insert(id, State::Verified);
             Ok(())
         }
         let mut states = HashMap::new();
-        dfs(&self.start, &page_map, &mut states)?;
+        dfs(&self.start, &page_map, &pool_map, &mut states)?;
         if let Some(hub) = &self.outing_hub {
-            dfs(hub, &page_map, &mut states)?;
+            dfs(hub, &page_map, &pool_map, &mut states)?;
         }
         Ok(())
     }
@@ -840,47 +1010,62 @@ impl Story {
             )
             .unwrap();
         }
-        for page in &self.pages {
+        let write_page = |out: &mut String, indent: &str, page: &Page| {
+            let child_indent = format!("{indent}  ");
+            let sub_indent = format!("{indent}    ");
+            let choice_sub_indent = format!("{indent}      ");
             writeln!(
                 out,
-                "    <page id=\"{}\" scene=\"{}\">",
+                "{indent}<page id=\"{}\" scene=\"{}\">",
                 escape_attr(&page.id),
                 page.scene.as_str()
             )
             .unwrap();
             write_line(
-                &mut out,
-                "      ",
+                out,
+                &child_indent,
                 "title",
                 &page.title,
                 Some(&self.narrator),
             );
             if !page.setup.is_empty() {
-                out.push_str("      <setup>\n");
+                writeln!(out, "{child_indent}<setup>").unwrap();
                 for line in &page.setup {
-                    write_line(&mut out, "        ", "line", line, None);
+                    write_line(out, &sub_indent, "line", line, None);
                 }
-                out.push_str("      </setup>\n");
+                writeln!(out, "{child_indent}</setup>").unwrap();
             }
-            write_line(&mut out, "      ", "question", &page.question, None);
-            out.push_str("      <choices>\n");
+            write_line(out, &child_indent, "question", &page.question, None);
+            writeln!(out, "{child_indent}<choices>").unwrap();
             for choice in &page.choices {
                 if let Some(next) = &choice.next {
-                    writeln!(out, "        <choice next=\"{}\">", escape_attr(next)).unwrap();
+                    writeln!(out, "{sub_indent}<choice next=\"{}\">", escape_attr(next)).unwrap();
                 } else {
-                    out.push_str("        <choice>\n");
+                    writeln!(out, "{sub_indent}<choice>").unwrap();
                 }
                 write_line(
-                    &mut out,
-                    "          ",
+                    out,
+                    &choice_sub_indent,
                     "say",
                     &choice.line,
                     Some(&self.protagonist),
                 );
-                write_line(&mut out, "          ", "reply", &choice.reply, None);
-                out.push_str("        </choice>\n");
+                write_line(out, &choice_sub_indent, "reply", &choice.reply, None);
+                writeln!(out, "{sub_indent}</choice>").unwrap();
             }
-            out.push_str("      </choices>\n    </page>\n");
+            writeln!(out, "{child_indent}</choices>\n{indent}</page>").unwrap();
+        };
+        for entry in &self.pages {
+            match entry {
+                PageEntry::Single(page) => write_page(&mut out, "    ", page),
+                PageEntry::Pool { id, variants } => {
+                    writeln!(out, "    <pool id=\"{}\">", escape_attr(id)).unwrap();
+                    for variant in variants {
+                        write_page(&mut out, "      ", variant);
+                    }
+                    out.push_str("    </pool>\n");
+                }
+            }
         }
         out.push_str("  </pages>\n");
 
@@ -974,12 +1159,26 @@ fn write_line(out: &mut String, indent: &str, tag: &str, line: &Line, omit_actor
         )
         .unwrap();
     }
-    writeln!(out, "{indent}  <sv>{}</sv>", escape_text(&line.swedish)).unwrap();
-    if let Some(lit) = &line.literal {
-        writeln!(out, "{indent}  <lit>{}</lit>", escape_text(lit)).unwrap();
-    }
-    if !line.english.is_empty() {
-        writeln!(out, "{indent}  <en>{}</en>", escape_text(&line.english)).unwrap();
+    if line.alts.is_empty() {
+        writeln!(out, "{indent}  <sv>{}</sv>", escape_text(&line.swedish)).unwrap();
+        if let Some(lit) = &line.literal {
+            writeln!(out, "{indent}  <lit>{}</lit>", escape_text(lit)).unwrap();
+        }
+        if !line.english.is_empty() {
+            writeln!(out, "{indent}  <en>{}</en>", escape_text(&line.english)).unwrap();
+        }
+    } else {
+        for alt in &line.alts {
+            writeln!(out, "{indent}  <alt>").unwrap();
+            writeln!(out, "{indent}    <sv>{}</sv>", escape_text(&alt.swedish)).unwrap();
+            if let Some(lit) = &alt.literal {
+                writeln!(out, "{indent}    <lit>{}</lit>", escape_text(lit)).unwrap();
+            }
+            if !alt.english.is_empty() {
+                writeln!(out, "{indent}    <en>{}</en>", escape_text(&alt.english)).unwrap();
+            }
+            writeln!(out, "{indent}  </alt>").unwrap();
+        }
     }
     writeln!(out, "{indent}</{tag}>").unwrap();
 }
@@ -1043,6 +1242,27 @@ pub fn available_story_files() -> Vec<PathBuf> {
     found
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogEntry {
+    pub path: PathBuf,
+    pub title: String,
+    pub subtitle: String,
+}
+
+pub fn discover_catalog() -> Vec<CatalogEntry> {
+    available_story_files()
+        .into_iter()
+        .filter_map(|path| {
+            let story = Story::from_xml_file(&path).ok()?;
+            Some(CatalogEntry {
+                path,
+                title: story.title,
+                subtitle: story.subtitle,
+            })
+        })
+        .collect()
+}
+
 pub fn default_story_path() -> Result<PathBuf, String> {
     if let Some(override_path) = std::env::var_os("LEARN_SWEDISH_STORY") {
         let path = PathBuf::from(override_path);
@@ -1061,6 +1281,8 @@ pub fn default_story_path() -> Result<PathBuf, String> {
 
 pub struct Book {
     story: Rc<Story>,
+    outing_hub_page: Option<String>,
+    seen: HashSet<String>,
     pub pages: Vec<Page>,
     current: usize,
     pub selected: Option<usize>,
@@ -1092,28 +1314,94 @@ impl Book {
     }
 
     pub fn from_story(story: Rc<Story>, mut choose: impl FnMut(usize) -> usize) -> Self {
-        Self::build(story, &[], &mut choose)
+        Self::build(story, HashSet::new(), None, false, &mut choose)
     }
 
-    fn build(story: Rc<Story>, previous: &[Page], choose: &mut impl FnMut(usize) -> usize) -> Self {
-        let mut pages = story.pages.clone();
+    fn build(
+        story: Rc<Story>,
+        mut seen: HashSet<String>,
+        last_visited: Option<&str>,
+        start_at_hub: bool,
+        choose: &mut impl FnMut(usize) -> usize,
+    ) -> Self {
+        let mut pages = Vec::new();
+        let mut pool_map: HashMap<String, String> = HashMap::new();
+        let mut pool_indices = HashSet::new();
+        for entry in &story.pages {
+            match entry {
+                PageEntry::Single(page) => pages.push((**page).clone()),
+                PageEntry::Pool { id, variants } => {
+                    let unseen: Vec<_> =
+                        variants.iter().filter(|v| !seen.contains(&v.id)).collect();
+                    let available: Vec<_> = if unseen.is_empty() {
+                        for v in variants {
+                            seen.remove(&v.id);
+                        }
+                        let non_immediate: Vec<_> = variants
+                            .iter()
+                            .filter(|v| Some(v.id.as_str()) != last_visited)
+                            .collect();
+                        if non_immediate.is_empty() {
+                            variants.iter().collect()
+                        } else {
+                            non_immediate
+                        }
+                    } else {
+                        unseen
+                    };
+                    let chosen = available[choose(available.len()) % available.len()].clone();
+                    pool_map.insert(id.clone(), chosen.id.clone());
+                    pool_indices.insert(pages.len());
+                    pages.push(chosen);
+                }
+            }
+        }
+        let resolve = |target: &str| -> String {
+            pool_map
+                .get(target)
+                .cloned()
+                .unwrap_or_else(|| target.to_owned())
+        };
+        for page in &mut pages {
+            for choice in &mut page.choices {
+                if let Some(next) = &mut choice.next {
+                    *next = resolve(next);
+                }
+            }
+        }
         for (index, page) in pages.iter_mut().enumerate() {
+            page.apply_alts(choose);
             let count = page.choices.len();
-            match story.choice_rotation {
-                ChoiceRotation::None => {}
-                ChoiceRotation::ByIndex => page.choices.rotate_left(index % count),
-                ChoiceRotation::Random => page.choices.rotate_left(choose(count) % count),
+            if pool_indices.contains(&index) {
+                page.choices.rotate_left(choose(count) % count);
+            } else {
+                match story.choice_rotation {
+                    ChoiceRotation::None => {}
+                    ChoiceRotation::ByIndex => page.choices.rotate_left(index % count),
+                    ChoiceRotation::Random => page.choices.rotate_left(choose(count) % count),
+                }
             }
         }
         if let Some(pool) = &story.encounters {
-            insert_encounters(&mut pages, pool, previous, choose);
+            insert_encounters(&mut pages, pool, &pool_map, &mut seen, last_visited, choose);
         }
+        let outing_hub_page = story.outing_hub.as_deref().map(&resolve);
+        let entry_id = if start_at_hub {
+            outing_hub_page
+                .clone()
+                .unwrap_or_else(|| resolve(&story.start))
+        } else {
+            resolve(&story.start)
+        };
         let current = pages
             .iter()
-            .position(|page| page.id == story.start)
+            .position(|page| page.id == entry_id)
             .expect("Validated start page exists");
+        seen.insert(pages[current].id.clone());
         Self {
             story,
+            outing_hub_page,
+            seen,
             pages,
             current,
             selected: None,
@@ -1126,18 +1414,25 @@ impl Book {
     }
 
     pub fn has_outing_hub(&self) -> bool {
-        self.story.outing_hub.is_some()
+        self.outing_hub_page.is_some()
     }
 
     pub fn restart(&mut self, mut choose: impl FnMut(usize) -> usize) {
-        *self = Self::build(self.story.clone(), &self.pages, &mut choose);
+        let last = self.pages.get(self.current).map(|p| p.id.clone());
+        let seen = std::mem::take(&mut self.seen);
+        *self = Self::build(
+            self.story.clone(),
+            seen,
+            last.as_deref(),
+            false,
+            &mut choose,
+        );
     }
 
-    pub fn new_outing(&mut self, choose: impl FnMut(usize) -> usize) {
-        self.restart(choose);
-        if let Some(hub) = self.story.outing_hub.clone() {
-            self.follow(&hub);
-        }
+    pub fn new_outing(&mut self, mut choose: impl FnMut(usize) -> usize) {
+        let last = self.pages.get(self.current).map(|p| p.id.clone());
+        let seen = std::mem::take(&mut self.seen);
+        *self = Self::build(self.story.clone(), seen, last.as_deref(), true, &mut choose);
     }
 
     pub fn page(&self) -> &Page {
@@ -1213,6 +1508,7 @@ impl Book {
                 .iter()
                 .position(|page| page.id == next)
                 .expect("Story links are validated when loading XML");
+            self.seen.insert(self.pages[self.current].id.clone());
         }
     }
 }
@@ -1220,28 +1516,49 @@ impl Book {
 fn insert_encounters(
     pages: &mut Vec<Page>,
     pool: &EncounterPool,
-    previous: &[Page],
+    pool_map: &HashMap<String, String>,
+    seen: &mut HashSet<String>,
+    last_visited: Option<&str>,
     choose: &mut impl FnMut(usize) -> usize,
 ) {
     for route in &pool.routes {
         let mut local = route.distractors.clone();
         let mut general = pool.distractors.clone();
         for stop in &route.stops {
-            let candidates: Vec<_> = stop
+            let after_id = pool_map
+                .get(&stop.after)
+                .map_or(stop.after.as_str(), String::as_str);
+            let before_id = pool_map
+                .get(&stop.before)
+                .cloned()
+                .unwrap_or_else(|| stop.before.clone());
+            let unseen: Vec<_> = stop
                 .encounters
                 .iter()
-                .filter(|enc| !previous.iter().any(|page| page.id == enc.id))
+                .filter(|enc| !seen.contains(&enc.id))
                 .collect();
-            let available: Vec<_> = if candidates.is_empty() {
-                stop.encounters.iter().collect()
+            let available: Vec<_> = if unseen.is_empty() {
+                for enc in &stop.encounters {
+                    seen.remove(&enc.id);
+                }
+                let non_immediate: Vec<_> = stop
+                    .encounters
+                    .iter()
+                    .filter(|enc| Some(enc.id.as_str()) != last_visited)
+                    .collect();
+                if non_immediate.is_empty() {
+                    stop.encounters.iter().collect()
+                } else {
+                    non_immediate
+                }
             } else {
-                candidates
+                unseen
             };
             let chosen = available[choose(available.len()) % available.len()];
             let mut choices = vec![Choice {
                 line: chosen.say.clone(),
                 reply: chosen.reply.clone(),
-                next: Some(stop.before.clone()),
+                next: Some(before_id.clone()),
             }];
             if !local.is_empty() {
                 let idx = choose(local.len()) % local.len();
@@ -1260,11 +1577,11 @@ fn insert_encounters(
             choices.rotate_left(choose(count) % count);
             let link = pages
                 .iter_mut()
-                .find(|page| page.id == stop.after)
+                .find(|page| page.id == after_id)
                 .and_then(|page| {
                     page.choices
                         .iter_mut()
-                        .find(|choice| choice.next.as_deref() == Some(stop.before.as_str()))
+                        .find(|choice| choice.next.as_deref() == Some(before_id.as_str()))
                 })
                 .expect("Validated encounter stop must match an existing link");
             link.next = Some(chosen.id.clone());
@@ -1452,7 +1769,7 @@ mod tests {
         assert_eq!(&reparsed, story);
 
         let mut phrases = vec![story.ending.line.phrase()];
-        for page in &story.pages {
+        for page in story.all_pages() {
             phrases.extend(page.phrases());
             phrases.extend(page.choices.iter().map(|c| c.reply.phrase()));
         }
@@ -1510,7 +1827,7 @@ mod tests {
         }
 
         let rc = Rc::new(story.clone());
-        let max_pool = story
+        let max_enc_pool = story
             .encounters
             .as_ref()
             .and_then(|pool| {
@@ -1520,8 +1837,17 @@ mod tests {
                     .map(|s| s.encounters.len())
                     .max()
             })
-            .unwrap_or(1)
-            .max(1);
+            .unwrap_or(1);
+        let max_page_pool = story
+            .pages
+            .iter()
+            .filter_map(|entry| match entry {
+                PageEntry::Single(_) => None,
+                PageEntry::Pool { variants, .. } => Some(variants.len()),
+            })
+            .max()
+            .unwrap_or(1);
+        let max_pool = max_enc_pool.max(max_page_pool).max(1);
         let mut all_seen = HashSet::new();
         for index in 0..max_pool {
             let book = Book::from_story(rc.clone(), |upper| index % upper);
@@ -1532,13 +1858,12 @@ mod tests {
                 .collect();
             assert_eq!(by_id.len(), book.pages.len());
             let mut seen = HashSet::new();
-            walk(&story.start, &by_id, &mut Vec::new(), &mut seen);
+            walk(&book.page().id, &by_id, &mut Vec::new(), &mut seen);
             assert_eq!(seen.len(), book.pages.len());
             all_seen.extend(seen.into_iter().map(str::to_owned));
         }
         let expected_ids: HashSet<String> = story
-            .pages
-            .iter()
+            .all_pages()
             .map(|p| p.id.clone())
             .chain(
                 story
@@ -1759,5 +2084,159 @@ mod tests {
                 .unwrap_err()
                 .contains("unknown actor")
         );
+    }
+
+    #[test]
+    fn page_pools_rotate_scenarios_without_repeating_the_previous_run() {
+        let pool_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<story version="1.0" id="pool-test" start="leave" outing-hub="hub">
+  <meta><title>Pooltest</title></meta>
+  <cast protagonist="you" responder="guide" narrator="narrator">
+    <actor id="narrator" label="Berättaren" role="lead" voices="mattias"/>
+    <actor id="you" label="Du" role="lead" voices="mattias"/>
+    <actor id="guide" label="Guiden" role="lead" voices="sofie"/>
+  </cast>
+  <pages>
+    <pool id="leave">
+      <page id="leave-a" scene="home">
+        <title><sv>Avfärd A</sv></title>
+        <question><sv>Redo A?</sv><en>Ready A?</en></question>
+        <choices>
+          <choice next="hub"><say><sv>Ja A.</sv><en>Yes A.</en></say><reply><sv>Bra.</sv><en>Good.</en></reply></choice>
+          <choice><say><sv>Nej A.</sv><en>No A.</en></say><reply><sv>Kom igen.</sv><en>Come on.</en></reply></choice>
+        </choices>
+      </page>
+      <page id="leave-b" scene="home">
+        <title><sv>Avfärd B</sv></title>
+        <question><sv>Redo B?</sv><en>Ready B?</en></question>
+        <choices>
+          <choice next="hub"><say><sv>Ja B.</sv><en>Yes B.</en></say><reply><sv>Bra.</sv><en>Good.</en></reply></choice>
+          <choice><say><sv>Nej B.</sv><en>No B.</en></say><reply><sv>Kom igen.</sv><en>Come on.</en></reply></choice>
+        </choices>
+      </page>
+    </pool>
+    <page id="hub" scene="city">
+      <title><sv>Mitten</sv></title>
+      <question><sv>Hem?</sv><en>Home?</en></question>
+      <choices>
+        <choice next="return"><say><sv>Vi går hem.</sv><en>Let's go home.</en></say><reply><sv>Okej.</sv><en>Okay.</en></reply></choice>
+        <choice><say><sv>Stanna.</sv><en>Stay.</en></say><reply><sv>Det är sent.</sv><en>It is late.</en></reply></choice>
+      </choices>
+    </page>
+    <pool id="return">
+      <page id="return-a" scene="home">
+        <title><sv>Hemkomst A</sv></title>
+        <question><sv>Trött A?</sv><en>Tired A?</en></question>
+        <choices>
+          <choice next="done"><say><sv>Sova A.</sv><en>Sleep A.</en></say><reply><sv>God natt.</sv><en>Good night.</en></reply></choice>
+          <choice><say><sv>Dansa A.</sv><en>Dance A.</en></say><reply><sv>Inte nu.</sv><en>Not now.</en></reply></choice>
+        </choices>
+      </page>
+      <page id="return-b" scene="home">
+        <title><sv>Hemkomst B</sv></title>
+        <question><sv>Trött B?</sv><en>Tired B?</en></question>
+        <choices>
+          <choice next="done"><say><sv>Sova B.</sv><en>Sleep B.</en></say><reply><sv>God natt.</sv><en>Good night.</en></reply></choice>
+          <choice><say><sv>Dansa B.</sv><en>Dance B.</en></say><reply><sv>Inte nu.</sv><en>Not now.</en></reply></choice>
+        </choices>
+      </page>
+    </pool>
+  </pages>
+</story>"#;
+        let story = Story::from_xml(pool_xml).unwrap();
+        verify_story_graph_and_round_trip(&story);
+        let mut book = Book::from_story(Rc::new(story), |_| 0);
+        let first_leave = book.page().id.clone();
+        assert!(book.skip());
+        assert_eq!(book.page().id, "hub");
+        assert!(book.skip());
+        let first_return = book.page().id.clone();
+        assert!(book.skip());
+        assert!(book.finished);
+        book.restart(|_| 0);
+        assert_ne!(book.page().id, first_leave);
+        book.new_outing(|_| 0);
+        assert_eq!(book.page().id, "hub");
+        assert!(book.skip());
+        assert_ne!(book.page().id, first_return);
+    }
+
+    #[test]
+    fn alt_phrasings_vary_for_all_participants_and_round_trip_losslessly() {
+        let alt_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<story version="1.0" id="alt-test">
+  <meta><title>Alt-test</title></meta>
+  <cast protagonist="you" responder="wife" narrator="narrator">
+    <actor id="narrator" label="Berättaren" role="lead" voices="mattias"/>
+    <actor id="you" label="Du" role="lead" voices="mattias"/>
+    <actor id="wife" label="Din fru" role="lead" voices="sofie"/>
+    <actor id="staff" label="Personalen" role="guest" voices="hillevi"/>
+  </cast>
+  <pages>
+    <page id="chat" scene="shop">
+      <title>
+        <alt><sv>Titel ett</sv><en>Title one</en></alt>
+        <alt><sv>Titel två</sv><en>Title two</en></alt>
+      </title>
+      <setup>
+        <line actor="staff">
+          <alt><sv>Snabb fråga ett?</sv><en>Fast question one?</en></alt>
+          <alt><sv>Snabb fråga två?</sv><en>Fast question two?</en></alt>
+        </line>
+      </setup>
+      <question actor="wife">
+        <alt><sv>Vad svarar du ett?</sv><en>What do you answer one?</en></alt>
+        <alt><sv>Vad svarar du två?</sv><en>What do you answer two?</en></alt>
+      </question>
+      <choices>
+        <choice next="done">
+          <say>
+            <alt><sv>Min svenska är dålig, vi kan öva eller ta engelska.</sv><en>My Swedish is poor, we can practise or use English.</en></alt>
+            <alt><sv>Förlåt, knackig svenska — öva gärna om du har tid, annars engelska.</sv><en>Sorry, shaky Swedish — happy to practise if you have time, else English.</en></alt>
+          </say>
+          <reply actor="staff">
+            <alt><sv>Ingen brådska!</sv><en>No rush!</en></alt>
+            <alt><sv>Vi tar engelska snabbt!</sv><en>Let's use English quickly!</en></alt>
+          </reply>
+        </choice>
+        <choice>
+          <say><sv>Jag fryser till is.</sv><en>I freeze solid.</en></say>
+          <reply><sv>Andas!</sv><en>Breathe!</en></reply>
+        </choice>
+      </choices>
+    </page>
+  </pages>
+</story>"#;
+        let story = Story::from_xml(alt_xml).unwrap();
+        assert_eq!(Story::from_xml(&story.to_xml()).unwrap(), story);
+        let rc = Rc::new(story);
+        let book_zero = Book::from_story(rc.clone(), |_| 0);
+        let book_one = Book::from_story(rc, |_| 1);
+        assert_ne!(
+            book_zero.page().title.swedish,
+            book_one.page().title.swedish
+        );
+        assert_ne!(
+            book_zero.page().setup[0].swedish,
+            book_one.page().setup[0].swedish
+        );
+        assert_ne!(
+            book_zero.page().question.swedish,
+            book_one.page().question.swedish
+        );
+        let valid_zero = book_zero
+            .page()
+            .choices
+            .iter()
+            .find(|c| c.next.is_some())
+            .unwrap();
+        let valid_one = book_one
+            .page()
+            .choices
+            .iter()
+            .find(|c| c.next.is_some())
+            .unwrap();
+        assert_ne!(valid_zero.line.swedish, valid_one.line.swedish);
+        assert_ne!(valid_zero.reply.swedish, valid_one.reply.swedish);
     }
 }
